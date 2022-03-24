@@ -142,6 +142,13 @@ typedef enum
 	MALI_GRALLOC_USAGE_AFRC_CHROMA_CODING_SIZE_MASK = MALI_GRALLOC_USAGE_AFRC_CHROMA_CODING_SIZE_32,
 } mali_gralloc_usage_type;
 
+/* To indicate the buffer to allocate would be accessed by RGA.
+ *
+ * For the limitation of IP implementation, RGA2 could only access buffers with physical address within 4G.
+ * There is no such limitation in RGA3.
+ */
+#define RK_GRALLOC_USAGE_RGA_ACCESS     RK_GRALLOC_USAGE_WITHIN_4G
+
 #define GRALLOC_USAGE_SW_WRITE_RARELY static_cast<uint64_t>(2 << 4)
 #define GRALLOC_USAGE_SW_WRITE_OFTEN static_cast<uint64_t>(3 << 4)
 #define GRALLOC_USAGE_SW_READ_RARELY static_cast<uint64_t>(2)
