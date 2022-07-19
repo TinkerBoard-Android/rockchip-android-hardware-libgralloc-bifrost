@@ -138,7 +138,7 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 {
 	const uint32_t pixel_stride = bufDescriptor->plane_info[0].byte_stride * 8 / (format->bpp[0]);
 	const uint32_t byte_stride = bufDescriptor->plane_info[0].byte_stride;
-	const uint32_t height = bufDescriptor->height;
+	const uint32_t alloc_height = (bufDescriptor->plane_info)[0].alloc_height;
 	const uint32_t base_format = bufDescriptor->alloc_format.get_base();
 	size_t size_needed_by_rk_video = 0;
 
@@ -150,22 +150,22 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 			 * .KP : from CSY : video_decoder 需要的 NV12 buffer 中除了 YUV 数据还有其他 metadata, 要更多的空间.
 			 *		    2 * w * h 一定够.
 			 */
-			size_needed_by_rk_video = 2 * pixel_stride * height;
+			size_needed_by_rk_video = 2 * pixel_stride * alloc_height;
 			break;
 		}
 		case MALI_GRALLOC_FORMAT_INTERNAL_NV16:
 		{
-			size_needed_by_rk_video = 2.5 * pixel_stride * height; // 根据 陈锦森的 要求
+			size_needed_by_rk_video = 2.5 * pixel_stride * alloc_height; // 根据 陈锦森的 要求
 			break;
 		}
 		case MALI_GRALLOC_FORMAT_INTERNAL_NV15:
 		{
-			size_needed_by_rk_video = 2 * byte_stride * height;
+			size_needed_by_rk_video = 2 * byte_stride * alloc_height;
 			break;
 		}
 		case MALI_GRALLOC_FORMAT_INTERNAL_NV24:
 		{
-			size_needed_by_rk_video = 3 * byte_stride * height;
+			size_needed_by_rk_video = 3 * byte_stride * alloc_height;
 			break;
 		}
 		default:
