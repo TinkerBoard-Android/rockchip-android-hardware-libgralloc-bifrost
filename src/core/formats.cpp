@@ -188,6 +188,29 @@ void mali_gralloc_adjust_dimensions(const internal_format_t alloc_format,
 	const auto producers = get_producers(usage);
 	const auto consumers = get_consumers(usage);
 
+	switch ( usage & RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_MASK )
+	{
+		case RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_8:
+		{
+			*height = GRALLOC_ALIGN(*height, 8);
+			break;
+		}
+		case RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_16:
+		{
+			*height = GRALLOC_ALIGN(*height, 16);
+			break;
+		}
+		case RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64:
+		{
+			*height = GRALLOC_ALIGN(*height, 64);
+			break;
+		}
+		default:
+		{
+			break;
+		}
+	}
+
 	/*-------------------------------------------------------*/
 
 #if 0	// 这段逻辑不 适用于 RK 的 VPU.
