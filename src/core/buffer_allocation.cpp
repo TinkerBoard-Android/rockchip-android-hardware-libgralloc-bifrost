@@ -164,6 +164,11 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 			size_needed_by_rk_video = 2 * byte_stride * height;
 			break;
 		}
+		case MALI_GRALLOC_FORMAT_INTERNAL_NV24:
+		{
+			size_needed_by_rk_video = 3 * byte_stride * height;
+			break;
+		}
 		default:
 			return;
 	}
