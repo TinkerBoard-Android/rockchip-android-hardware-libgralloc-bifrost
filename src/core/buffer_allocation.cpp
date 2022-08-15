@@ -790,16 +790,6 @@ static void calc_allocation_size(const int width,
 
 				case RK_GRALLOC_USAGE_STRIDE_ALIGN_64:
 					byte_stride = GRALLOC_ALIGN(byte_stride, 64);
-
-					/* .trick : 和王杭联调确认, 此时 NV24 的 plane_1 预期的 byte_stride 是 "64 * 2: 128" 对齐
-					 * 另, 王杭: 目前 NV24 只会要求 64 对齐.
-					 */
-					if ( MALI_GRALLOC_FORMAT_INTERNAL_NV24 == format.id
-						&& 1 == plane )
-					{
-						byte_stride = GRALLOC_ALIGN(byte_stride, 128);
-					}
-
 					break;
 
 				case RK_GRALLOC_USAGE_STRIDE_ALIGN_128:
