@@ -137,6 +137,7 @@ int validate_lock_input_parameters(const buffer_handle_t buffer, const int l,
                                    const int t, const int w, const int h,
                                    uint64_t usage)
 {
+	GRALLOC_UNUSED(usage);
 	const int lock_pid = getpid();
 	const private_handle_t * const hnd = (private_handle_t *)buffer;
 	auto alloc_format = hnd->get_alloc_format();
@@ -167,6 +168,7 @@ int validate_lock_input_parameters(const buffer_handle_t buffer, const int l,
 		return -EINVAL;
 	}
 
+#if 0
 	/* Reject lock requests with:
 	 * 1: CPU usages not being present
 	 * 2: Consumer/producer flags not set (with the exception of BLOB format)
@@ -181,6 +183,7 @@ int validate_lock_input_parameters(const buffer_handle_t buffer, const int l,
 		    << (hnd->consumer_usage | hnd->producer_usage) << " )";
 		return -EINVAL;
 	}
+#endif
 
 	/* Locking process should have a valid buffer virtual address. A process
 	 * will have a valid buffer virtual address if it is the allocating
