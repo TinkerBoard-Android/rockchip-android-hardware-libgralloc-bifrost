@@ -148,7 +148,7 @@ void allocate(buffer_descriptor_t *bufferDescriptor, uint32_t count, IAllocator:
 				", stride : %d, "
 				"alloc_format : 0x%" PRIx64 ", size : %d, layer_count : %u, backing_store_size : %d, "
 				"backing_store_id : %" PRIu64 ", "
-				"allocating_pid : %d, ref_count : %d, yuv_info : %d",
+				"allocating_pid : %d, yuv_info : %d",
 				hnd, (bufDescriptor->name).c_str() == nullptr ? "unset" : (bufDescriptor->name).c_str(),
 			  hnd->share_fd, hnd->share_attr_fd,
 			  hnd->flags, hnd->width, hnd->height,
@@ -156,7 +156,7 @@ void allocate(buffer_descriptor_t *bufferDescriptor, uint32_t count, IAllocator:
 			  hnd->stride,
 			  hnd->alloc_format, hnd->size, hnd->layer_count, hnd->backing_store_size,
 			  hnd->backing_store_id,
-			  hnd->allocating_pid, hnd->ref_count, hnd->yuv_info);
+			  hnd->allocating_pid, hnd->yuv_info);
 #ifdef ENABLE_DEBUG_LOG
 			ALOGD("plane_info[0]: offset : %u, byte_stride : %u, alloc_width : %u, alloc_height : %u",
 					(hnd->plane_info)[0].offset,

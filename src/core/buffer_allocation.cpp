@@ -53,7 +53,7 @@ static uint64_t getUniqueId()
 	return id | counter++;
 }
 
-static void afbc_buffer_align(const bool is_tiled, int *size)
+void afbc_buffer_align(const bool is_tiled, int *size)
 {
 	const uint16_t AFBC_BODY_BUFFER_BYTE_ALIGNMENT = 1024;
 
@@ -139,7 +139,7 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 	const uint32_t pixel_stride = bufDescriptor->plane_info[0].byte_stride * 8 / (format->bpp[0]);
 	const uint32_t byte_stride = bufDescriptor->plane_info[0].byte_stride;
 	const uint32_t height = bufDescriptor->height;
-	const uint32_t base_format = bufDescriptor->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
+	const uint32_t base_format = bufDescriptor->alloc_format.get_base();
 	size_t size_needed_by_rk_video = 0;
 
 	switch ( base_format )
@@ -334,6 +334,62 @@ std::optional<alloc_type_t> get_alloc_type(const internal_format_t format, const
 		alloc_type.primary_type = AllocBaseType::BLOCK_LINEAR;
 	}
 	return alloc_type;
+}
+
+bool is_subsampled_yuv(const internal_format_t format);
+
+/*
+ * Initialise AFBC header based on superblock layout.
+ * Width and height should already be AFBC aligned.
+ */
+void init_afbc(uint8_t *buf, const internal_format_t alloc_format,
+               const bool is_multi_plane,
+               const int w, const int h)
+{
+	const bool is_tiled = alloc_format.get_afbc_tiled_headers();
+	const uint32_t n_headers = (w * h) / AFBC_PIXELS_PER_BLOCK;
+	int body_offset = n_headers * AFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY;
+
+	afbc_buffer_align(is_tiled, &body_offset);
+
+	/*
+	 * Declare the AFBC header initialisation values for each superblock layout.
+	 * Tiled headers (AFBC 1.2) can be initialised to zero for non-subsampled formats
+	 * (SB layouts: 0, 3, 4, 7).
+	 */
+	uint32_t headers[][4] = {
+		{ (uint32_t)body_offset, 0x1, 0x10000, 0x0 }, /* Layouts 0, 3, 4, 7 */
+		{ ((uint32_t)body_offset + (1 << 28)), 0x80200040, 0x1004000, 0x20080 } /* Layouts 1, 5 */
+	};
+	if (is_tiled)
+	{
+		/* Zero out body_offset for non-subsampled formats. */
+		memset(headers[0], 0, sizeof(uint32_t) * 4);
+	}
+
+	/* Map base format to AFBC header layout */
+	const uint32_t base_format = alloc_format.get_base();
+
+	/* Sub-sampled formats use layouts 1 and 5 which is index 1 in the headers array.
+	 * 1 = 4:2:0 16x16, 5 = 4:2:0 32x8.
+	 *
+	 * Non-subsampled use layouts 0, 3, 4 and 7, which is index 0.
+	 * 0 = 16x16, 3 = 32x8 + split, 4 = 32x8, 7 = 64x4.
+	 *
+	 * When using separated planes for YUV formats, the header layout is the non-subsampled one
+	 * as there is a header per-plane and there is no sub-sampling within the plane.
+	 * Separated plane only supports 32x8 or 64x4 for the luma plane, so the first plane must be 4 or 7.
+	 * Seperated plane only supports 64x4 for subsequent planes, so these must be header layout 7.
+	 */
+	const uint32_t layout = is_subsampled_yuv(alloc_format) && !is_multi_plane ? 1 : 0;
+
+	MALI_GRALLOC_LOGV("Writing AFBC header layout %d for format %" PRIx32, layout, base_format);
+
+	for (uint32_t i = 0; i < n_headers; i++)
+	{
+		memcpy(buf, headers[layout], sizeof(headers[layout]));
+		buf += sizeof(headers[layout]);
+	}
 }
 
 static int max(int a, int b)
@@ -957,18 +1013,24 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 	* usage and requested format.
 	*/
 	bufDescriptor->alloc_format = mali_gralloc_select_format(bufDescriptor->hal_format,
-	                                                         bufDescriptor->format_type,
 	                                                         usage,
 	                                                         bufDescriptor->width * bufDescriptor->height);
 
-	if(((bufDescriptor->alloc_format == 0x30 || bufDescriptor->alloc_format == 0x31 || bufDescriptor->alloc_format == 0x32 ||
-		bufDescriptor->alloc_format == 0x33 || bufDescriptor->alloc_format == 0x34 || bufDescriptor->alloc_format == 0x35) &&
-		(usage == 0x300 || usage == 0x200) && alloc_width <= 100 && alloc_height <= 100) ||
-		(bufDescriptor->alloc_format == 0x100 && (alloc_width == 100 || alloc_width == 4) && (alloc_height == 100 || alloc_height == 4) &&
-		(usage == 0x300 || usage == 0x200)))
+	if ( ( (bufDescriptor->alloc_format.get_value() == 0x30
+				|| bufDescriptor->alloc_format.get_value() == 0x31
+				|| bufDescriptor->alloc_format.get_value() == 0x32
+				|| bufDescriptor->alloc_format.get_value() == 0x33
+				|| bufDescriptor->alloc_format.get_value() == 0x34
+				|| bufDescriptor->alloc_format.get_value() == 0x35)
+			&& (usage == 0x300 || usage == 0x200)
+			&& alloc_width <= 100 && alloc_height <= 100)
+		|| (bufDescriptor->alloc_format.get_value() == 0x100
+			&& (alloc_width == 100 || alloc_width == 4)
+			&& (alloc_height == 100 || alloc_height == 4)
+			&& (usage == 0x300 || usage == 0x200) ) )
 	{
-		ALOGE("rk-debug isSupportedi workaround for cts NativeHardware format = 0x%" PRIx64 " and usage 0x%" PRIx64,
-				bufDescriptor->alloc_format, usage);
+		ALOGE("rk-debug isSupportedi workaround for cts NativeHardware format = 0x%x and usage 0x%" PRIx64,
+				bufDescriptor->alloc_format.get_value(), usage);
 		return -EINVAL;
 	}
 
@@ -979,6 +1041,7 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 		return -EINVAL;
 	}
 
+	/* 获取 alloc_format 在 formats 中的 format_info_t 实例的指针. */
 	const auto *format_info = descriptor->alloc_format.get_base_info();
 	if (format_info == nullptr)
 	{
@@ -1033,8 +1096,9 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 		|| (GRALLOC_USAGE_DECODER == (GRALLOC_USAGE_DECODER | bufDescriptor->producer_usage) ) )
 #endif
 	{
-		const uint32_t base_format = bufDescriptor->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
+		const uint32_t base_format = bufDescriptor->alloc_format.get_base();
 		const bool is_stride_specified = usage & RK_GRALLOC_USAGE_SPECIFY_STRIDE;
+		const std::vector<format_info_t> &formats = get_all_base_formats();
 
 		/* 若 base_format "是" 被 rk_video 使用的格式, 且 rk client 要求指定 stride, 则 ... */
 		if ( is_base_format_used_by_rk_video(base_format) && is_stride_specified )
@@ -1044,13 +1108,13 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 			int pixel_stride_calculated_by_arm_gralloc = 0;
 
 			/* 若当前 是 AFBC 格式, 则 ... */
-			if ( bufDescriptor->alloc_format & MALI_GRALLOC_INTFMT_AFBC_BASIC )
+			if ( bufDescriptor->alloc_format.is_afbc() )
 			{
-				bpp = formats[format_idx].bpp_afbc[0];
+				bpp = (format_info->bpp_afbc)[0];
 			}
 			else
 			{
-				bpp = formats[format_idx].bpp[0];
+				bpp = (format_info->bpp)[0];
 			}
 
 			pixel_stride_calculated_by_arm_gralloc = bufDescriptor->plane_info[0].byte_stride * 8 / bpp;
@@ -1064,11 +1128,11 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 			}
 
 			/* 对某些 格式的 rk_video_buffer 的 size 做必要调整. */
-			adjust_rk_video_buffer_size(bufDescriptor, &(formats[format_idx] ) );
+			adjust_rk_video_buffer_size(bufDescriptor, format_info);
 		}
 		else if ( is_base_format_used_by_rk_video(base_format) && is_stride_alignment_specified(usage) )
 		{
-			adjust_rk_video_buffer_size(bufDescriptor, &(formats[format_idx] ) );
+			adjust_rk_video_buffer_size(bufDescriptor, format_info);
 		}
 	}
 	/*-------------------------------------------------------*/

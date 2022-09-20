@@ -22,4 +22,6 @@
 
 void mali_gralloc_adjust_dimensions(internal_format_t format, uint64_t usage, int *width, int *height);
 
-internal_format_t mali_gralloc_select_format(mali_gralloc_android_format req_format, uint64_t usage);
+internal_format_t mali_gralloc_select_format(mali_gralloc_android_format req_format, uint64_t usage, const int buffer_size);
+
+bool is_base_format_used_by_rk_video(const uint32_t base_format);

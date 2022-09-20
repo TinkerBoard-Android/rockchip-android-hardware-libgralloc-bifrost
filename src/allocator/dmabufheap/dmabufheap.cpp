@@ -241,12 +241,15 @@ void allocator_free(private_handle_t *handle)
 	handle->share_fd = -1;
 }
 
+void init_afbc(uint8_t *buf, const internal_format_t alloc_format,
+               const bool is_multi_plane,
+               const int w, const int h);
+
 int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t **out_handle)
 {
 	unsigned int priv_heap_flag = private_handle_t::PRIV_FLAGS_USES_DBH;
 	uint64_t usage;
 	uint32_t max_buffer_index = 0;
-	int shared_fd = -1;
 	private_handle_t *handle = nullptr;
 	int ret = 0;
 	private_handle_t* hnd= nullptr; // 'handle' 的别名.
@@ -271,13 +274,9 @@ int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t *
 	usage = descriptor->consumer_usage | descriptor->producer_usage;
 
 	const char* heap_name = pick_dmabuf_heap(usage);
-	if ( NULL == heap_name )
-	{
-		MALI_GRALLOC_LOGE("Failed to find an appropriate dmabuf_heap.");
-		ret = -1;
-		goto fail;
-	}
-	shared_fd = s_buf_allocator->Alloc(heap_name, descriptor->size);
+
+	android::base::unique_fd shared_fd{
+		s_buf_allocator->Alloc(heap_name, descriptor->size)};
 	if (shared_fd < 0)
 	{
 		MALI_GRALLOC_LOGE("Alloc failed.");
@@ -287,7 +286,7 @@ int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t *
 
 	handle = make_private_handle(
 	    priv_heap_flag, descriptor->size, descriptor->consumer_usage,
-	    descriptor->producer_usage, shared_fd, descriptor->hal_format, descriptor->alloc_format,
+	    descriptor->producer_usage, std::move(shared_fd), descriptor->hal_format, descriptor->alloc_format,
 	    descriptor->width, descriptor->height, descriptor->size, descriptor->layer_count,
 	    descriptor->plane_info, descriptor->pixel_stride);
 	if (nullptr == handle)
@@ -295,11 +294,6 @@ int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t *
 		MALI_GRALLOC_LOGE("Private handle could not be created for descriptor");
 		ret = -ENOMEM;
 		goto fail;
-	}
-	else
-	{
-		/* Ownership transferred to handle. */
-		shared_fd = -1;
 	}
 
 	// for CTS.
@@ -330,14 +324,14 @@ int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t *
 #ifndef GRALLOC_INIT_AFBC
 #define GRALLOC_INIT_AFBC 0
 #endif
-	if (GRALLOC_INIT_AFBC && is_format_afbc(descriptor->alloc_format))
+	if (descriptor->alloc_format.is_afbc())
 	{
 		allocator_sync_start(handle, true, true);
 
 		/* For separated plane YUV, there is a header to initialise per plane. */
-		const plane_info_t *plane_info = descriptor->plane_info;
+		const plane_layout plane_info = descriptor->plane_info;
 		const bool is_multi_plane = handle->is_multi_plane();
-		for (int i = 0; i < MAX_PLANES && (i == 0 || plane_info[i].byte_stride != 0); i++)
+		for (int i = 0; i < max_planes && (i == 0 || plane_info[i].byte_stride != 0); i++)
 		{
 			init_afbc(static_cast<uint8_t *>(handle->base) + plane_info[i].offset,
 			          descriptor->alloc_format,
@@ -352,11 +346,6 @@ success:
 	*out_handle = handle;
 	return 0;
 fail:
-	if (shared_fd != -1)
-	{
-		close(shared_fd);
-	}
-
 	if (handle != nullptr)
 	{
 		allocator_free(handle);
@@ -384,7 +373,7 @@ int allocator_map(private_handle_t *handle)
 		return -errno;
 	}
 
-	handle->base = static_cast<std::byte *>(mapping) + handle->offset;
+	handle->base = static_cast<std::byte *>(mapping);
 
 	return 0;
 }
@@ -396,17 +385,15 @@ void allocator_unmap(private_handle_t *handle)
 		return;
 	}
 
-	void *base = static_cast<std::byte *>(handle->base) - handle->offset;
+	void *base = static_cast<std::byte *>(handle->base);
 	if (munmap(base, handle->size) < 0)
 	{
 		MALI_GRALLOC_LOGE("Could not munmap base:%p size:%d '%s'", base, handle->size, strerror(errno));
 	}
-	else
-	{
-		handle->base = 0;
-		handle->cpu_read = 0;
-		handle->cpu_write = 0;
-	}
+
+	handle->base = nullptr;
+	handle->cpu_write = false;
+	handle->lock_count = 0;
 }
 
 void allocator_close(void)

@@ -190,30 +190,6 @@ void mali_gralloc_adjust_dimensions(const internal_format_t alloc_format,
 
 	/*-------------------------------------------------------*/
 
-	/* 若当前 buffer 是 AFBC 格式, 且 VOP 是 consumer, 且 VPU 是 producer, 则 ... */
-	if ( (alloc_format & MALI_GRALLOC_INTFMT_AFBC_BASIC)
-		&& (consumers & MALI_GRALLOC_CONSUMER_DPU)	// "DPU" : Display processor, 就是 RK 的 VOP.
-		&& (producers & MALI_GRALLOC_PRODUCER_VPU) )
-	{
-		const uint32_t base_format = alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
-
-		/* 若 base_format "是" 被 的 rk_video 使用 格式, 则 ... */
-		if ( is_base_format_used_by_rk_video(base_format) )
-		{
-			const int pixel_stride = *width; // pixel_stride_ask_by_rk_video
-
-			/* 若 'pixel_stride' "没有" 按照 VOP 的要求对齐. */
-			if ( pixel_stride % AFBC_BUFFERS_HORIZONTAL_PIXEL_STRIDE_ALIGNMENT_REQUIRED_BY_356X_VOP != 0 )
-			{
-				W("pixel_stride_ask_by_rk_video(%d) is not %d aligned required by 356x VOP",
-						 pixel_stride,
-						 AFBC_BUFFERS_HORIZONTAL_PIXEL_STRIDE_ALIGNMENT_REQUIRED_BY_356X_VOP);
-			}
-		}
-	}
-
-	/*-------------------------------------------------------*/
-
 #if 0	// 这段逻辑不 适用于 RK 的 VPU.
 	/*
 	 * Video producer requires additional height padding of AFBC buffers (whole
@@ -343,7 +319,7 @@ static format_support_flags usage_supports_base_format(uint64_t usages, format_s
  * @return 1, where format is subsampled YUV;
  *         0, otherwise
  */
-static bool is_subsampled_yuv(const internal_format_t format)
+bool is_subsampled_yuv(const internal_format_t format)
 {
 	const auto *info = format.get_base_info();
 	return info != nullptr && info->is_yuv && (info->hsub > 1 || info->vsub > 1);
@@ -1457,11 +1433,12 @@ static bool should_sf_client_layer_use_afbc_format_by_size(const uint64_t base_f
 	}
 }
 
-static uint64_t rk_gralloc_select_format(const uint64_t req_format,
+static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_format req_format,
 					 const uint64_t usage,
 					 const int buffer_size) // Buffer resolution (w x h, in pixels).
 {
-	uint64_t internal_format = req_format;
+	mali_gralloc_internal_format internal_format = req_format;
+	mali_gralloc_internal_format modifier = 0;
 
 	/*-------------------------------------------------------*/
 	/* rk 定义的 从 'req_format' 到 'internal_format' 的映射. */
@@ -1538,8 +1515,7 @@ static uint64_t rk_gralloc_select_format(const uint64_t req_format,
 		&& internal_format == req_format )
 	{
 		/* 用 ARM 定义的规则, 从 'req_format' 得到 'internal_format'. */
-		internal_format = get_internal_format(req_format,
-						      true);	// 'map_to_internal'
+		internal_format = get_internal_format(req_format);
 		if ( MALI_GRALLOC_FORMAT_INTERNAL_UNDEFINED == internal_format )
 		{
 			internal_format = req_format;
@@ -1583,25 +1559,22 @@ static uint64_t rk_gralloc_select_format(const uint64_t req_format,
 				{
 				case RK3326:
 					I("to allocate AFBC buffer for fb_target_layer on rk3326.");
-					internal_format = 
-						MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888
-						| MALI_GRALLOC_INTFMT_AFBC_BASIC
-						| MALI_GRALLOC_INTFMT_AFBC_YUV_TRANSFORM;
+					internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
+					modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC | MALI_GRALLOC_INTFMT_AFBC_YUV_TRANSFORM;
 					break;
 
 				case RK356X:
 				case RK3588:
 					if ( 0 == (usage & MALI_GRALLOC_USAGE_NO_AFBC) )
 					{
-					    D("to allocate AFBC buffer for fb_target_layer on rk356x.");
-					    internal_format = 
-						    MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888
-						    | MALI_GRALLOC_INTFMT_AFBC_BASIC;
+						D("to allocate AFBC buffer for fb_target_layer on rk356x.");
+						internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
+						modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
 					}
 					else
 					{
-					    D("to allocate non AFBC buffer for fb_target_layer on rk356x.");
-					    internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
+						D("to allocate non AFBC buffer for fb_target_layer on rk356x.");
+						internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
 					}
 					break;
 
@@ -1614,12 +1587,9 @@ static uint64_t rk_gralloc_select_format(const uint64_t req_format,
 		else	// if ( !should_disable_afbc_in_fb_target_layer() )
 		{
 			D("AFBC IS disabled for fb_target_layer.");
-			internal_format = req_format;
 		}
 
 		save_fb_size(buffer_size);
-
-		return internal_format;
 	}
 	/* 否则, 即 当前 buffer 用于 sf_client_layer 等其他用途, 则... */
 	else
@@ -1664,10 +1634,8 @@ static uint64_t rk_gralloc_select_format(const uint64_t req_format,
                                                 && should_sf_client_layer_use_afbc_format_by_size(internal_format,
                                                                                                   buffer_size) )
                                         {
-                                                /* 强制将 'internal_format' 设置为对应的 AFBC 格式. */
-                                                internal_format = internal_format | MALI_GRALLOC_INTFMT_AFBC_BASIC;
-                                                D("use_afbc_layer: force to set 'internal_format' to 0x%" PRIx64 " for usage '0x%" PRIx64,
-                                                                internal_format, usage);
+                                                D("use_afbc_layer: force to use AFBC");
+						modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
                                         }
                                 }
                         }
@@ -1676,7 +1644,7 @@ static uint64_t rk_gralloc_select_format(const uint64_t req_format,
 
 	/*-------------------------------------------------------*/
 
-	return internal_format;
+	return internal_format_t::from_private(internal_format | modifier);
 }
 
 /*
@@ -1696,13 +1664,7 @@ internal_format_t mali_gralloc_select_format(const mali_gralloc_android_format r
 /* < 若 USE_RK_SELECTING_FORMAT_MANNER 为 1, 则将使用 rk 的方式来选择 alloc_format .> */
 #if USE_RK_SELECTING_FORMAT_MANNER
 // #error
-
-	GRALLOC_UNUSED(type);
-	uint64_t alloc_format;
-
-	alloc_format = rk_gralloc_select_format(req_format, usage, buffer_size);
-
-	return alloc_format;
+	return rk_gralloc_select_format(req_format, usage, buffer_size);
 #else
 	/* Reject if usage specified is outside white list of valid usages. */
 	if ((usage & (~VALID_USAGE)) != 0)

@@ -34,13 +34,6 @@ cc_library_static {
 	],
 }
 
-cc_library_host_static {
-	name: "libgralloc_xml_configuration_host",
-	defaults: [
-		"arm_gralloc_xml_configuation_defaults",
-	],
-}
-
 cc_defaults {
 	name: "arm_gralloc_capabilities_defaults",
 	defaults: [
