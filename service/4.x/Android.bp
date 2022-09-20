@@ -15,52 +15,23 @@
  * limitations under the License.
  */
 
-cc_defaults {
-	name: "arm_gralloc_core_defaults",
-	defaults: [
-		"arm_gralloc_defaults",
-		"arm_gralloc_version_defaults",
-	],
-
+cc_binary {
+	name: "android.hardware.graphics.allocator@4.0-service",
+	proprietary: true,
+	relative_install_path: "hw",
 	srcs: [
-		"buffer_access.cpp",
-		"buffer_allocation.cpp",
-		"formats.cpp",
-		"reference.cpp",
-		"format_info.cpp",
-		"drm_utils.cpp",
+		"service.cpp",
 	],
-	static_libs: [
-		"libarect",
+	init_rc: [
+		"android.hardware.graphics.allocator@4.0-service.rc",
 	],
 	shared_libs: [
+		"android.hardware.graphics.allocator@4.0",
+		"libhidlbase",
 		"liblog",
-		"libcutils",
 		"libutils",
-		"libdrm",
 	],
-	target: {
-		android: {
-			shared_libs: [
-				"libhardware",
-			],
-		},
-	},
-}
-
-cc_library_static {
-	name: "libgralloc_core",
-	defaults: [
-		"arm_gralloc_core_defaults",
-		"arm_gralloc_version_defaults",
+	required: [
+		"android.hardware.graphics.allocator@4.0-impl-arm",
 	],
 }
-
-/*
-cc_library_host_static {
-	name: "libgralloc_core_host",
-	defaults: [
-		"arm_gralloc_core_defaults",
-	],
-}
-*/

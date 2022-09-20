@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Arm Limited.
+ * Copyright (C) 2020-2022 Arm Limited.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,6 @@ cc_defaults {
 		"android.hardware.graphics.common@1.2",
 	],
 	cflags: [
-		"-DLOG_TAG=\"gralloc4\"",
 		"-DGRALLOC_VERSION_MAJOR=4",
 		"-DHIDL_ALLOCATOR_VERSION_SCALED=400",
 		"-DHIDL_MAPPER_VERSION_SCALED=400",
@@ -34,6 +33,7 @@ cc_defaults {
 	defaults: [
 		"arm_gralloc_defaults",
 		"arm_gralloc_version_defaults",
+		"arm_gralloc_uses_aidl_defaults",
 		"libgralloc_allocator_dependencies",
 	],
 	compile_multilib: "both",
@@ -56,6 +56,8 @@ cc_defaults {
 		"libgralloc_allocator",
 		"libgralloc_allocator_shared_memory",
 		"libgralloc_capabilities",
+		"libgralloc_xml_configuration",
+		"libxml2",
 	],
 	header_libs: [
 		"libnativebase_headers",
@@ -85,12 +87,9 @@ cc_library_shared {
 	name: "android.hardware.graphics.mapper@4.0-impl-bifrost",
 	defaults: [
 		"arm_gralloc_api_4x_defaults",
-	],
-	static_libs: [
-		"libgralloc_drm_utils",
+		"arm_gralloc_uses_aidl_defaults",
 	],
 	shared_libs: [
-		"arm.graphics-V1-ndk_platform",
 		"android.hardware.graphics.mapper@4.0",
 	],
 	srcs: [

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Arm Limited.
+ * Copyright (C) 2020-2022 Arm Limited.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,35 +15,23 @@
  * limitations under the License.
  */
 
-cc_library_static {
-    name: "libgralloc_drm_utils",
-    cflags: [
-        "-Wall",
-        "-Werror",
-    ],
-    srcs: [
-        "src/drm_utils.cpp",
-    ],
+aidl_interface {
+    name: "arm.graphics",
+    host_supported: true,
     vendor: true,
-    shared_libs: [
-        "liblog",
-        "libdrm",
-        "libcutils",
+    srcs: [
+        "arm/graphics/*.aidl",
     ],
-    header_libs: [
-        "libgralloc_headers",
-        "libhardware_rockchip_headers",
-    ],
-    include_dirs: [
-        ".",
-    ],
-    export_include_dirs: [
-        ".",
-    ],
-    export_shared_lib_headers: [
-        "libdrm",
-    ],
-    export_header_lib_headers: [
-        "libgralloc_headers",
-    ],
+    stability: "vintf",
+    backend: {
+        java: {
+            enabled: false,
+        },
+        cpp: {
+            enabled: false,
+        },
+    },
+    versions: ["1",
+               "2",
+               "3"],
 }
