@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2017-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -17,36 +17,25 @@
  */
 #pragma once
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <cutils/native_handle.h>
-#include <string.h>
-
-#ifdef __cplusplus
+#include <array>
+#include <atomic>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <new>
-#endif
+
+#include <android-base/unique_fd.h>
+#include <cutils/native_handle.h>
+#include <unistd.h>
+#include <sys/mman.h>
 
 #include "log.h"
 #include "private_interface_types.h"
+#include "gralloc/testing.h"
 
-/* the max string size of GRALLOC_HARDWARE_GPU0 & GRALLOC_HARDWARE_FB0
- * 8 is big enough for "gpu0" & "fb0" currently
- */
-#define MALI_GRALLOC_HARDWARE_MAX_STR_LEN 8
-
-/* Define number of shared file descriptors. Not guaranteed to be constant for a private_handle_t object
- * as fds that do not get initialized may instead be treated as integers.
- */
-#define GRALLOC_ARM_NUM_FDS 2
-
-#define NUM_INTS_IN_PRIVATE_HANDLE ((sizeof(struct private_handle_t) - sizeof(native_handle)) / sizeof(int) - GRALLOC_ARM_NUM_FDS)
-
-#define SZ_4K 0x00001000
-#define SZ_2M 0x00200000
+#define PRIVATE_HANDLE_NUM_FDS 2
+#define PRIVATE_HANDLE_NUM_INTS ((sizeof(private_handle_t) - sizeof(native_handle_t)) / sizeof(int) - PRIVATE_HANDLE_NUM_FDS)
 
 /*
  * Maximum number of pixel format planes.
@@ -54,21 +43,16 @@
  * Plane [1]: U/V, UV
  * Plane [2]: V/U
  */
-#define MAX_PLANES 3
+static constexpr size_t max_planes = 3;
 
-#ifdef __cplusplus
-#define DEFAULT_INITIALIZER(x) = x
-#else
-#define DEFAULT_INITIALIZER(x)
-#endif
-
-typedef struct plane_info {
+struct plane_info_t
+{
 
 	/*
 	 * Offset to plane (in bytes),
 	 * from the start of the allocation.
 	 */
-	uint32_t offset;
+	uint32_t offset{};
 
 	/*
 	 * Byte Stride: number of bytes between two vertically adjacent
@@ -85,7 +69,7 @@ typedef struct plane_info {
 	 * For uncompressed allocations, byte_stride might contain additional
 	 * padding beyond the alloc_width. For AFBC, alignment is zero.
 	 */
-	uint32_t byte_stride;
+	uint32_t byte_stride{};
 
 	/*
 	 * Dimensions of plane (in pixels).
@@ -105,30 +89,29 @@ typedef struct plane_info {
 	 * be wholly within the allocation dimensions. The crop region top-left
 	 * will be relative to the start of allocation.
 	 */
-	uint32_t alloc_width;
-	uint32_t alloc_height;
-} plane_info_t;
+	uint32_t alloc_width{};
+	uint32_t alloc_height{};
+};
 
-struct private_handle_t;
+using plane_layout = std::array<plane_info_t, max_planes>;
 
-#ifndef __cplusplus
-/* C99 with pedantic don't allow anonymous unions which is used in below struct
- * Disable pedantic for C for this struct only.
+/* Forward declarations of C++ types. */
+class internal_format_t;
+
+/*
+ * The following code is gralloc's implementation of the native_handle data structure provided
+ * by cutils/native_handle.h. Its purpose is to permit transfer of file descriptors and buffer
+ * metadata across processes via. binder or otherwise.
+ *
+ * It is assumed the inherited native_handle memory is placed before the private_handle memory.
+ * For the implementation to function correctly, we must ensure:
+ *  - The same memory layout between 64-bit and 32-bit processes. Pointers are padded to the
+ *    size of a uint64_t to ensure offsetof returns the same value.
+ *  - The structure is trivially copyable, that is, able to be copied using memcpy.
+ *  - The structure is trivially destructible since the destructor will never be called.
  */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#endif
-
-#ifdef __cplusplus
 struct private_handle_t : public native_handle
 {
-#else
-struct private_handle_t
-{
-	struct native_handle nativeHandle;
-#endif
-
-#ifdef __cplusplus
 	/* Never intended to be used from C code */
 	enum
 	{
@@ -145,7 +128,6 @@ struct private_handle_t
 		LOCK_STATE_MAPPED = 1 << 30,
 		LOCK_STATE_READ_MASK = 0x3FFFFFFF
 	};
-#endif
 
 	/*
 	 * Shared file descriptor for dma_buf sharing. This must be the first element in the
@@ -153,12 +135,12 @@ struct private_handle_t
 	 * processes.
 	 * DO NOT MOVE THIS ELEMENT!
 	 */
-	int share_fd DEFAULT_INITIALIZER(-1);
-	int share_attr_fd DEFAULT_INITIALIZER(-1);
+	int share_fd{-1};
+	int share_attr_fd{-1};
 
 	// ints
-	int magic DEFAULT_INITIALIZER(sMagic);
-	int flags DEFAULT_INITIALIZER(0);
+	int magic{sMagic};
+	int flags{};
 
 	/*
 	 * Input properties.
@@ -167,14 +149,14 @@ struct private_handle_t
 	 * width/height: Buffer dimensions.
 	 * producer/consumer_usage: Buffer usage (indicates IP)
 	 */
-	int width DEFAULT_INITIALIZER(0);
-	int height DEFAULT_INITIALIZER(0);
-	int req_format DEFAULT_INITIALIZER(0);
-	uint64_t producer_usage DEFAULT_INITIALIZER(0);
-	uint64_t consumer_usage DEFAULT_INITIALIZER(0);
+	int width{};
+	int height{};
+	int req_format{};
+	uint64_t producer_usage{};
+	uint64_t consumer_usage{};
 
 	/* DEPRECATED. Kept for valiation purposes */
-	int stride DEFAULT_INITIALIZER(0);
+	int stride{};
 
 	/*
 	 * Allocation properties.
@@ -190,29 +172,28 @@ struct private_handle_t
 	 *               Layer (n) offset: n * ('size' / 'layer_count'), n=0 for the first layer.
 	 *
 	 */
-	uint64_t alloc_format DEFAULT_INITIALIZER(0);
-	plane_info_t plane_info[MAX_PLANES] DEFAULT_INITIALIZER({});
-	int size DEFAULT_INITIALIZER(0);
-	uint32_t layer_count DEFAULT_INITIALIZER(0);
-
+	uint64_t alloc_format{};
+	plane_layout plane_info{};
+	int size{};
+	int layer_count{};
 
 	union
 	{
-		void *base DEFAULT_INITIALIZER(NULL);
-		uint64_t padding;
+		void *base{nullptr};
+		uint64_t base_padding;
 	};
-	uint64_t backing_store_id DEFAULT_INITIALIZER(0x0);
-	int backing_store_size DEFAULT_INITIALIZER(0);
-	int cpu_read DEFAULT_INITIALIZER(0);               /**< Buffer is locked for CPU read when non-zero. */
-	int cpu_write DEFAULT_INITIALIZER(0);              /**< Buffer is locked for CPU write when non-zero. */
-	int allocating_pid DEFAULT_INITIALIZER(0);
-	int remote_pid DEFAULT_INITIALIZER(-1);
-	int ref_count DEFAULT_INITIALIZER(0);
+	uint64_t backing_store_id{};
+	int backing_store_size{};
+	std::atomic<int> lock_count{};
+	int cpu_write{};              /**< Buffer is locked for CPU write when non-zero. */
+	int allocating_pid{};
+	int remote_pid{-1};
+
 	// locally mapped shared attribute area
 	union
 	{
-		void *attr_base DEFAULT_INITIALIZER(MAP_FAILED);
-		uint64_t padding3;
+		void *attr_base{MAP_FAILED};
+		uint64_t attr_base_padding;
 	};
 
 	/*
@@ -220,92 +201,49 @@ struct private_handle_t
 	 * Use GRALLOC_ARM_BUFFER_ATTR_DATASPACE
 	 * instead.
 	 */
-	mali_gralloc_yuv_info yuv_info DEFAULT_INITIALIZER(MALI_YUV_NO_INFO);
-
-	// For framebuffer only
-	int fd DEFAULT_INITIALIZER(-1);
-	union
-	{
-		off_t offset DEFAULT_INITIALIZER(0);
-		uint64_t padding4;
-	};
+	mali_gralloc_yuv_info yuv_info{MALI_YUV_NO_INFO};
 
 	/* Size of the attribute shared region in bytes. */
-	uint64_t attr_size DEFAULT_INITIALIZER(0);
+	uint64_t attr_size{};
 
-	uint64_t reserved_region_size DEFAULT_INITIALIZER(0);
+	uint64_t reserved_region_size{};
 
-	uint64_t imapper_version DEFAULT_INITIALIZER(0);
+	uint64_t imapper_version{};
 
-#ifdef __cplusplus
-	/*
-	 * We track the number of integers in the structure. There are 16 unconditional
-	 * integers (magic - pid, yuv_info, fd and offset). Note that the fd element is
-	 * considered an int not an fd because it is not intended to be used outside the
-	 * surface flinger process. The GRALLOC_ARM_NUM_INTS variable is used to track the
-	 * number of integers that are conditionally included. Similar considerations apply
-	 * to the number of fds.
+	/**
+	 * This magic number is used to check that the native_handle passed to Gralloc is our private_handle_t type.
+	 * The value is chosen arbitrarily.
 	 */
-	static const int sNumFds = GRALLOC_ARM_NUM_FDS;
 	static const int sMagic = 0x3141592;
 
-	private_handle_t(int _flags, int _size, void *_base, uint64_t _consumer_usage, uint64_t _producer_usage,
-	                 int fb_file, off_t fb_offset, int _byte_stride, int _width, int _height, uint64_t _alloc_format)
-	    : flags(_flags)
-	    , producer_usage(_producer_usage)
-	    , consumer_usage(_consumer_usage)
-	    , alloc_format(_alloc_format)
-	    , size(_size)
-	    , base(_base)
-	    , allocating_pid(getpid())
-	    , ref_count(1)
-	    , fd(fb_file)
-	    , offset(fb_offset)
+	private_handle_t(int in_flags, int in_size, uint64_t in_consumer_usage, uint64_t in_producer_usage, int in_shared_fd,
+	                 int in_req_format, uint64_t in_alloc_format, int in_width, int in_height, int in_backing_store_size,
+	                 int in_layer_count, const plane_layout &in_plane_info, int in_stride)
+	    : share_fd{in_shared_fd}
+	    , flags{in_flags}
+	    , width{in_width}
+	    , height{in_height}
+	    , req_format{in_req_format}
+	    , producer_usage{in_producer_usage}
+	    , consumer_usage{in_consumer_usage}
+	    , stride{in_stride}
+	    , alloc_format{in_alloc_format}
+	    , plane_info{in_plane_info}
+	    , size{in_size}
+	    , layer_count{in_layer_count}
+	    , backing_store_size{in_backing_store_size}
+	    , allocating_pid{getpid()}
 	{
 		version = sizeof(native_handle);
-		numFds = sNumFds;
-		numInts = NUM_INTS_IN_PRIVATE_HANDLE;
-
-		plane_info[0].offset = fb_offset;
-		plane_info[0].byte_stride = _byte_stride;
-		plane_info[0].alloc_width = _width;
-		plane_info[0].alloc_height = _height;
-	}
-
-	private_handle_t(int _flags, int _size, uint64_t _consumer_usage, uint64_t _producer_usage, int _shared_fd,
-	                 int _req_format, uint64_t _alloc_format, int _width, int _height, int _backing_store_size,
-	                 uint64_t _layer_count, const plane_info_t *_plane_info, int _stride)
-	    : share_fd(_shared_fd)
-	    , flags(_flags)
-	    , width(_width)
-	    , height(_height)
-	    , req_format(_req_format)
-	    , producer_usage(_producer_usage)
-	    , consumer_usage(_consumer_usage)
-	    , stride(_stride)
-	    , alloc_format(_alloc_format)
-	    , size(_size)
-	    , layer_count(_layer_count)
-	    , backing_store_size(_backing_store_size)
-	    , allocating_pid(getpid())
-	    , ref_count(1)
-	{
-		version = sizeof(native_handle);
-		numFds = sNumFds;
-		numInts = NUM_INTS_IN_PRIVATE_HANDLE;
-		memcpy(plane_info, _plane_info, sizeof(plane_info_t) * MAX_PLANES);
-	}
-
-	~private_handle_t()
-	{
-		magic = 0;
+		numFds = PRIVATE_HANDLE_NUM_FDS;
+		numInts = PRIVATE_HANDLE_NUM_INTS;
 	}
 
 	static int validate(const native_handle *h)
 	{
 		const private_handle_t *hnd = (const private_handle_t *)h;
 		if (!h || h->version != sizeof(native_handle) || hnd->magic != sMagic ||
-		    h->numFds + h->numInts != NUM_INTS_IN_PRIVATE_HANDLE + GRALLOC_ARM_NUM_FDS)
+		    h->numFds + h->numInts != PRIVATE_HANDLE_NUM_INTS + PRIVATE_HANDLE_NUM_FDS)
 		{
 			return -EINVAL;
 		}
@@ -327,29 +265,16 @@ struct private_handle_t
 
 		return nullptr;
 	}
-#endif
+
+	internal_format_t get_alloc_format() const;
 };
-#ifndef __cplusplus
-/* Restore previous diagnostic for pedantic */
-#pragma GCC diagnostic pop
-#endif
 
-#ifdef __cplusplus
-static inline private_handle_t *make_private_handle(int flags, int size, uint64_t consumer_usage,
-                                                    uint64_t producer_usage, int shared_fd, int required_format,
-                                                    uint64_t allocated_format, int width, int height,
-                                                    int backing_store_size, uint64_t layer_count,
-                                                    const plane_info_t *plane_info, int stride)
-{
-	void *mem = native_handle_create(GRALLOC_ARM_NUM_FDS, NUM_INTS_IN_PRIVATE_HANDLE);
-	if (mem == nullptr)
-	{
-		MALI_GRALLOC_LOGE("private_handle_t allocation failed");
-		return nullptr;
-	}
+/* Check the correctness of the macros defined in gralloc/testing.h */
+static_assert(MALI_GRALLOC_HANDLE_WIDTH_OFFSET == offsetof(private_handle_t, width));
+static_assert(MALI_GRALLOC_HANDLE_HEIGHT_OFFSET == offsetof(private_handle_t, height));
 
-	return new (mem)
-	    private_handle_t(flags, size, consumer_usage, producer_usage, shared_fd, required_format, allocated_format,
-	                     width, height, backing_store_size, layer_count, plane_info, stride);
-}
-#endif
+private_handle_t *make_private_handle(int flags, int size, uint64_t consumer_usage, uint64_t producer_usage,
+                                      android::base::unique_fd shared_fd, int required_format,
+                                      internal_format_t allocated_format, int width, int height,
+                                      int backing_store_size, int layer_count,
+                                      const plane_layout &plane_info, int stride);

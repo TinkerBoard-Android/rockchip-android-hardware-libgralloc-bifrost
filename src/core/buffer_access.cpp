@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2016-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -18,10 +18,11 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <inttypes.h>
+#include <mutex>
 /* For error codes. */
 #include <hardware/gralloc1.h>
 
-#include "gralloc_version.h"
+#include "buffer_access.h"
 #include "private_interface_types.h"
 #include "buffer.h"
 #include "gralloc/formats.h"
@@ -38,6 +39,31 @@ enum tx_direction
 	TX_BOTH,
 };
 
+/* Mutex used to ensure the buffer map/unmap actions are synchronized */
+static std::mutex g_map_mutex;
+
+private_handle_t *make_private_handle(int flags, int size, uint64_t consumer_usage, uint64_t producer_usage,
+                                      android::base::unique_fd shared_fd, int required_format,
+                                      internal_format_t allocated_format, int width, int height,
+                                      int backing_store_size, int layer_count,
+                                      const plane_layout &plane_info, int stride)
+{
+	void *mem = native_handle_create(PRIVATE_HANDLE_NUM_FDS, PRIVATE_HANDLE_NUM_INTS);
+	if (mem == nullptr)
+	{
+		MALI_GRALLOC_LOGE("private_handle_t allocation failed");
+		return nullptr;
+	}
+
+	return new (mem)
+	    private_handle_t(flags, size, consumer_usage, producer_usage, shared_fd.release(), required_format,
+	                     allocated_format.get_value(), width, height, backing_store_size, layer_count, plane_info, stride);
+}
+
+internal_format_t private_handle_t::get_alloc_format() const
+{
+	return internal_format_t::from_private(alloc_format);
+}
 
 static enum tx_direction get_tx_direction(const uint64_t usage)
 {
@@ -65,28 +91,34 @@ static void buffer_sync(private_handle_t *hnd, tx_direction direction)
 {
 	if (direction != TX_NONE)
 	{
-		hnd->cpu_read = direction == TX_FROM_DEVICE || direction == TX_BOTH;
+		++hnd->lock_count;
 		hnd->cpu_write = direction == TX_TO_DEVICE || direction == TX_BOTH;
+		int cpu_read = direction == TX_FROM_DEVICE || direction == TX_BOTH;
 
-		int status = allocator_sync_start(hnd, hnd->cpu_read, hnd->cpu_write);
+		int status = allocator_sync_start(hnd, cpu_read, hnd->cpu_write);
 		if (status < 0)
 		{
 			return;
 		}
 	}
-	else if (hnd->cpu_read || hnd->cpu_write)
+	else
 	{
-		int status = allocator_sync_end(hnd, hnd->cpu_read, hnd->cpu_write);
-		if (status < 0)
+		if (hnd->cpu_write)
 		{
-			return;
+			/* Flush the cache only when there is a cpu_write lock. */
+			int status = allocator_sync_end(hnd, false, hnd->cpu_write);
+			if (status < 0)
+			{
+				return;
+			}
 		}
-
-		hnd->cpu_read = 0;
-		hnd->cpu_write = 0;
+		hnd->lock_count > 0 ? --hnd->lock_count : hnd->lock_count = 0;
+		if (hnd->lock_count == 0)
+		{
+			hnd->cpu_write = 0;
+		}
 	}
 }
-
 
 /*
  *  Validates input parameters of lock request.
@@ -105,9 +137,9 @@ int validate_lock_input_parameters(const buffer_handle_t buffer, const int l,
                                    const int t, const int w, const int h,
                                    uint64_t usage)
 {
-	bool is_registered_process = false;
 	const int lock_pid = getpid();
 	const private_handle_t * const hnd = (private_handle_t *)buffer;
+	auto alloc_format = hnd->get_alloc_format();
 
 	if ((l < 0) || (t < 0) || (w < 0) || (h < 0))
 	{
@@ -135,34 +167,40 @@ int validate_lock_input_parameters(const buffer_handle_t buffer, const int l,
 		return -EINVAL;
 	}
 
+	/* Reject lock requests with:
+	 * 1: CPU usages not being present
+	 * 2: Consumer/producer flags not set (with the exception of BLOB format)
+	 */
+	const auto format = alloc_format.get_base();
+	if (!(usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK)) ||
+	    (format != MALI_GRALLOC_FORMAT_INTERNAL_BLOB && (!(usage & (hnd->consumer_usage | hnd->producer_usage)))))
+	{
+		MALI_GRALLOC_LOG(ERROR) << std::showbase
+		    << "Lock is not supported for non-CPU usages or buffer not compatible. Locked with usage "
+		    << std::hex << usage << " buffer (format = " << alloc_format << ", usage = "
+		    << (hnd->consumer_usage | hnd->producer_usage) << " )";
+		return -EINVAL;
+	}
+
 	/* Locking process should have a valid buffer virtual address. A process
 	 * will have a valid buffer virtual address if it is the allocating
 	 * process or it retained / registered a cloned buffer handle
 	 */
-	if ((hnd->allocating_pid == lock_pid) || (hnd->remote_pid == lock_pid))
+	if ((hnd->allocating_pid != lock_pid) && (hnd->remote_pid != lock_pid))
 	{
-		is_registered_process = true;
-	}
-
-	if ((is_registered_process == false) || (hnd->base == NULL))
-	{
-		MALI_GRALLOC_LOGE("The buffer must be retained before lock request");
+		MALI_GRALLOC_LOG(ERROR) << "The buffer must be retained before lock request";
 		return -EINVAL;
 	}
 
 #if 0
 	/* Reject lock requests for AFBC (compressed format) enabled buffers */
-	if ((hnd->alloc_format & MALI_GRALLOC_INTFMT_EXT_MASK) != 0)
+	if (alloc_format.has_modifiers())
 	{
-		MALI_GRALLOC_LOGE("Lock is not supported for AFBC enabled buffers."
-		     "Internal Format:0x%" PRIx64, hnd->alloc_format);
-
+		MALI_GRALLOC_LOG(ERROR) << "Lock is not supported for AFBC enabled buffers. Internal format: "
+		                        << alloc_format;
 		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 #endif
-
-	/* Producer and consumer usage is verified in gralloc1 specific code. */
-	GRALLOC_UNUSED(usage);
 
 	return 0;
 }
@@ -198,8 +236,8 @@ int mali_gralloc_lock(buffer_handle_t buffer,
 
 	if (private_handle_t::validate(buffer) < 0)
 	{
-		MALI_GRALLOC_LOGE("Locking invalid buffer %p, returning error", buffer);
-		return -EINVAL;
+		MALI_GRALLOC_LOG(ERROR) << "Locking invalid buffer " << buffer << ", returning error";
+		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
 	/* Validate input parameters for lock request */
@@ -211,10 +249,11 @@ int mali_gralloc_lock(buffer_handle_t buffer,
 
 	private_handle_t *hnd = (private_handle_t *)buffer;
 
-	const int32_t format_idx = get_format_index(hnd->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-	if (format_idx == -1)
+	const auto alloc_format = hnd->get_alloc_format();
+	const auto *format_info = alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Corrupted buffer format 0x%" PRIx64 " of buffer %p", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Corrupted buffer format " << alloc_format << " of buffer " << hnd;
 		return -EINVAL;
 	}
 
@@ -225,8 +264,14 @@ int mali_gralloc_lock(buffer_handle_t buffer,
 		{
 			return -EINVAL;
 		}
-		*vaddr = (void *)hnd->base;
 
+		status = mali_map_buffer(hnd);
+		if (status != 0)
+		{
+			return status;
+		}
+
+		*vaddr = hnd->base;
 		buffer_sync(hnd, get_tx_direction(usage));
 	}
 
@@ -265,12 +310,11 @@ int mali_gralloc_lock_ycbcr(const buffer_handle_t buffer,
 
 	if (private_handle_t::validate(buffer) < 0)
 	{
-		MALI_GRALLOC_LOGE("Locking invalid buffer %p, returning error", buffer);
-		return -EINVAL;
+		MALI_GRALLOC_LOG(ERROR) << "Locking invalid buffer " << buffer << ", returning error";
+		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
 	private_handle_t * const hnd = (private_handle_t *)buffer;
-	const uint32_t base_format = hnd->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
 
 	/* Validate input parameters for lock request */
 	status = validate_lock_input_parameters(buffer, l, t, w, h, usage);
@@ -279,16 +323,17 @@ int mali_gralloc_lock_ycbcr(const buffer_handle_t buffer,
 		return status;
 	}
 
-	const int32_t format_idx = get_format_index(base_format);
-	if (format_idx == -1)
+	const auto alloc_format = hnd->get_alloc_format();
+	const auto *format_info = alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Corrupted buffer format 0x%" PRIx64 " of buffer %p", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Corrupted buffer format " << alloc_format << " of buffer " << hnd;
 		return -EINVAL;
 	}
 
-	if (formats[format_idx].is_yuv != true)
+	if (format_info->is_yuv != true)
 	{
-		MALI_GRALLOC_LOGE("Buffer format:0x%" PRIx64 " is not a YUV compatible format", hnd->alloc_format);
+		MALI_GRALLOC_LOG(ERROR) << "Buffer format: " << alloc_format << " is not a YUV compatible format";
 		return -EINVAL;
 	}
 
@@ -299,10 +344,16 @@ int mali_gralloc_lock_ycbcr(const buffer_handle_t buffer,
 			return -EINVAL;
 		}
 
+		status = mali_map_buffer(hnd);
+		if (status != 0)
+		{
+			return status;
+		}
+
 		ycbcr->y = (char *)hnd->base;
 		ycbcr->ystride = hnd->plane_info[0].byte_stride;
 
-		switch (base_format)
+		switch (alloc_format.get_base())
 		{
 		case MALI_GRALLOC_FORMAT_INTERNAL_Y8:
 		case MALI_GRALLOC_FORMAT_INTERNAL_Y16:
@@ -344,8 +395,8 @@ int mali_gralloc_lock_ycbcr(const buffer_handle_t buffer,
 			ycbcr->chroma_step = 1;
 			break;
 		default:
-			MALI_GRALLOC_LOGE("Buffer:%p of format 0x%" PRIx64 "can't be represented in"
-			     " android_ycbcr format", hnd, hnd->alloc_format);
+			MALI_GRALLOC_LOG(ERROR) << "Buffer: " << hnd <<" of format " << alloc_format
+			                        << "can't be represented in android_ycbcr format";
 			return -EINVAL;
 		}
 
@@ -410,29 +461,29 @@ int mali_gralloc_get_num_flex_planes(const buffer_handle_t buffer,
                                      uint32_t * const num_planes)
 {
 	private_handle_t *hnd = (private_handle_t *)buffer;
-	const uint32_t base_format = hnd->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
+	auto alloc_format = hnd->get_alloc_format();
 
-	if ((hnd->alloc_format & MALI_GRALLOC_INTFMT_EXT_MASK) != 0)
+	if (alloc_format.has_modifiers())
 	{
-		MALI_GRALLOC_LOGE("AFBC enabled buffers can't be represented in flex layout."
-		     "Internal Format:0x%" PRIx64, hnd->alloc_format);
+		MALI_GRALLOC_LOG(ERROR) << "AFBC enabled buffers can't be represented in flex layout. Internal format: "
+		                        << alloc_format;
 		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
-	const int32_t format_idx = get_format_index(base_format);
-	if (format_idx == -1)
+	const auto *format_info = alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Corrupted buffer format 0x%" PRIx64 " of buffer %p", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Corrupted buffer format " << alloc_format << " of buffer " << hnd;
 		return -EINVAL;
 	}
 
-	if (formats[format_idx].flex != true)
+	if (format_info->flex != true)
 	{
-		MALI_GRALLOC_LOGE("Format 0x%" PRIx64 " of %p can't be represented in flex", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Format " << alloc_format << " of " << hnd << " can't be represented in flex";
 		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
-	*num_planes = formats[format_idx].total_components();
+	*num_planes = format_info->total_components();
 
 	return GRALLOC1_ERROR_NONE;
 }
@@ -498,7 +549,6 @@ int mali_gralloc_lock_flex(const buffer_handle_t buffer, const uint64_t usage, c
                            const int h, struct android_flex_layout *const flex_layout)
 {
 	private_handle_t * const hnd = (private_handle_t *)buffer;
-	const uint32_t base_format = hnd->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
 
 	/* Validate input parameters for lock request */
 	int status = validate_lock_input_parameters(buffer, l, t, w, h, usage);
@@ -507,21 +557,28 @@ int mali_gralloc_lock_flex(const buffer_handle_t buffer, const uint64_t usage, c
 		return status;
 	}
 
-	const int32_t format_idx = get_format_index(base_format);
-	if (format_idx == -1)
+	const auto alloc_format = hnd->get_alloc_format();
+	const auto *format_info = alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Corrupted buffer format 0x%" PRIx64 " of buffer %p", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Corrupted buffer format " << alloc_format << " of buffer " << hnd;
 		return -EINVAL;
 	}
 
-	if (formats[format_idx].flex != true)
+	if (format_info->flex != true)
 	{
-		MALI_GRALLOC_LOGE("Format 0x%" PRIx64 " of %p can't be represented in flex", hnd->alloc_format, hnd);
+		MALI_GRALLOC_LOG(ERROR) << "Format " << alloc_format << " of " << hnd << " can't be represented in flex";
 		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
-	flex_layout->num_planes = formats[format_idx].total_components();
-	switch (base_format)
+	status = mali_map_buffer(hnd);
+	if (status != 0)
+	{
+		return status;
+	}
+
+	flex_layout->num_planes = format_info->total_components();
+	switch (alloc_format.get_base())
 	{
 	case MALI_GRALLOC_FORMAT_INTERNAL_Y8:
 		flex_layout->format = FLEX_FORMAT_Y;
@@ -779,11 +836,61 @@ int mali_gralloc_lock_flex(const buffer_handle_t buffer, const uint64_t usage, c
 		break;
 
 	default:
-		MALI_GRALLOC_LOGE("Can't lock buffer %p: format 0x%" PRIx64 " not handled", hnd, hnd->alloc_format);
+		MALI_GRALLOC_LOG(ERROR) << "Can't lock buffer " << hnd << ": format " << alloc_format << " not handled";
 		return GRALLOC1_ERROR_UNSUPPORTED;
 	}
 
 	buffer_sync(hnd, get_tx_direction(usage));
 
 	return GRALLOC1_ERROR_NONE;
+}
+
+/*
+ * Maps the buffer to make it accessible to CPU
+ *
+ * @param hnd [in]  The buffer to map
+ *
+ * @return 0, if mapping was successful;
+ *         Appropriate error, otherwise
+ *
+ * Note: The function can be safely called on buffers
+ * that are already mapped as it checks whether the buffer
+ * has previously been mapped.
+ */
+int mali_map_buffer(private_handle_t *hnd)
+{
+	int status = 0;
+
+	/* Ensure that buffer is only mapped once as there can
+	   be multiple lock() requests issued for the same buffer */
+	std::scoped_lock lock(g_map_mutex);
+	if (!hnd->base)
+	{
+		status = allocator_map(hnd);
+	}
+	return status;
+}
+
+/*
+ * Unmaps the buffer to no longer make it CPU accessible
+ *
+ * @param hnd [in]  The buffer to map
+ *
+ * Note: The function can be safely called on buffers that
+ * are not currently mapped as it will check whether the buffer
+ * was previously mapped.
+ */
+void mali_unmap_buffer(private_handle_t *hnd)
+{
+	std::scoped_lock lock(g_map_mutex);
+	if (hnd->base)
+	{
+		allocator_unmap(hnd);
+
+		/* We expect the allocators implementation to clear hnd->base & cpu flags
+		 * but since implementations can change, it is also reset here */
+		hnd->base = nullptr;
+		hnd->cpu_write = 0;
+		hnd->lock_count = 0;
+	}
 }

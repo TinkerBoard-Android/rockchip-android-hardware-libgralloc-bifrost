@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Arm Limited.
+ * Copyright (C) 2020-2022 Arm Limited.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -24,12 +24,7 @@
 #include "allocator/shared_memory/shared_memory.h"
 #include "core/buffer_descriptor.h"
 #include "helper_functions.h"
-
-#if GRALLOC_VERSION_MAJOR < 4
-#error "Metadata supported only on Gralloc 4.X and later"
-#elif GRALLOC_VERSION_MAJOR == 4
 #include "4.x/mapper_hidl_header.h"
-#endif
 
 namespace arm
 {
@@ -44,6 +39,7 @@ using aidl::android::hardware::graphics::common::Smpte2086;
 using aidl::android::hardware::graphics::common::Cta861_3;
 using aidl::android::hardware::graphics::common::BlendMode;
 using aidl::android::hardware::graphics::common::Dataspace;
+using aidl::android::hardware::graphics::common::ExtendableType;
 
 void shared_metadata_init(void *memory, std::string_view name);
 size_t shared_metadata_size();
@@ -55,6 +51,9 @@ android::status_t set_crop_rect(const private_handle_t *hnd, const Rect &crop_re
 
 void get_dataspace(const private_handle_t *hnd, std::optional<Dataspace> *dataspace);
 void set_dataspace(const private_handle_t *hnd, const Dataspace &dataspace);
+
+void get_chroma_siting(const private_handle_t *hnd, std::optional<ExtendableType> *chroma_siting);
+void set_chroma_siting(const private_handle_t *hnd, const ExtendableType &chroma_siting);
 
 void get_blend_mode(const private_handle_t *hnd, std::optional<BlendMode> *blend_mode);
 void set_blend_mode(const private_handle_t *hnd, const BlendMode &blend_mode);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2020 ARM Limited. All rights reserved.
+ * Copyright (C) 2017-2020, 2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -28,8 +28,7 @@
 
 /*
  * Below usage types overlap, this is intentional.
- * The reason is that for Gralloc 0.3 there are very
- * few usage flags we have at our disposal.
+ * The reason is that there are very few usage flags we have at our disposal.
  *
  * The overlapping is handled by processing the definitions
  * in a specific order.
@@ -45,7 +44,6 @@
  * is not present.
  */
 
-/* Local macro definitions to emulate Gralloc 1.0 usage interface */
 #define GRALLOC_USAGE_PRIVATE_0 1ULL << 28
 #define GRALLOC_USAGE_PRIVATE_1 1ULL << 29
 #define GRALLOC_USAGE_PRIVATE_2 1ULL << 30
@@ -107,16 +105,12 @@ typedef enum
 	/* See comment for Gralloc 1.0, above. */
 	MALI_GRALLOC_USAGE_FRONTBUFFER = GRALLOC_USAGE_PRIVATE_0,
 
-	/* See comment for Gralloc 1.0, above. */
 	MALI_GRALLOC_USAGE_FORCE_BACKBUFFER = GRALLOC_USAGE_PRIVATE_13,
 
-	/* See comment for Gralloc 1.0, above. */
 	MALI_GRALLOC_USAGE_NO_AFBC = GRALLOC_USAGE_PRIVATE_1,
 
-	/* See comment for Gralloc 1.0, above. */
 	MALI_GRALLOC_USAGE_AFBC_PADDING = GRALLOC_USAGE_PRIVATE_14,
 
-	/* See comment for Gralloc 1.0, above. */
 	MALI_GRALLOC_USAGE_PRIVATE_FORMAT = GRALLOC_USAGE_PRIVATE_15,
 
 	/* YUV-only. */
@@ -178,15 +172,9 @@ typedef enum
  */
 #define GRALLOC_USAGE_DECODER static_cast<uint64_t>(1 << 22)
 
-#if GRALLOC_VERSION_MAJOR >= 3 && !GRALLOC_HOST_BUILD
+#if !GRALLOC_HOST_BUILD
 
-#if HIDL_COMMON_VERSION_SCALED == 100
-#include <android/hardware/graphics/common/1.0/types.h>
-namespace hidl_common = android::hardware::graphics::common::V1_0;
-#elif HIDL_COMMON_VERSION_SCALED == 110
-#include <android/hardware/graphics/common/1.1/types.h>
-namespace hidl_common = android::hardware::graphics::common::V1_1;
-#elif HIDL_COMMON_VERSION_SCALED == 120
+#if HIDL_COMMON_VERSION_SCALED == 120
 #include <android/hardware/graphics/common/1.2/types.h>
 /* BufferUsage is not defined in 1.2/types.h as there are no changes from previous version */
 namespace hidl_common = android::hardware::graphics::common::V1_1;
@@ -205,7 +193,7 @@ static_assert(GRALLOC_USAGE_HW_COMPOSER == static_cast<uint64_t>(hidl_common::Bu
 static_assert(GRALLOC_USAGE_SENSOR_DIRECT_DATA == static_cast<uint64_t>(hidl_common::BufferUsage::SENSOR_DIRECT_DATA));
 static_assert(GRALLOC_USAGE_GPU_DATA_BUFFER == static_cast<uint64_t>(hidl_common::BufferUsage::GPU_DATA_BUFFER));
 static_assert(GRALLOC_USAGE_DECODER == static_cast<uint64_t>(hidl_common::BufferUsage::VIDEO_DECODER));
-#endif /* GRALLOC_VERSION_MAJOR >= 3 && !GRALLOC_HOST_BUILD */
+#endif /* !GRALLOC_HOST_BUILD */
 
 static const uint64_t VALID_USAGE =
     GRALLOC_USAGE_SW_READ_MASK |       /* 0x0FU */

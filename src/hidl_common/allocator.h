@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 ARM Limited. All rights reserved.
+ * Copyright (C) 2020, 2022 ARM Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -17,14 +17,8 @@
  */
 #pragma once
 
-#if GRALLOC_VERSION_MAJOR == 3
-#include "3.x/allocator_hidl_header.h"
-#elif GRALLOC_VERSION_MAJOR == 4
 #include "4.x/allocator_hidl_header.h"
-#endif
-
 #include <functional>
-
 #include "core/buffer_descriptor.h"
 #include "descriptor.h"
 

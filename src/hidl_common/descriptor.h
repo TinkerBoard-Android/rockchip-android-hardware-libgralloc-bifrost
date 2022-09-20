@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 ARM Limited. All rights reserved.
+ * Copyright (C) 2020, 2022 ARM Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -18,13 +18,7 @@
 #pragma once
 
 #include "core/buffer_descriptor.h"
-
-#if GRALLOC_VERSION_MAJOR == 3
-#include "3.x/mapper_hidl_header.h"
-#elif GRALLOC_VERSION_MAJOR == 4
 #include "4.x/mapper_hidl_header.h"
-#endif
-
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
@@ -195,7 +189,6 @@ static bool grallocDecodeBufferDescriptor(const hidl_vec<vecT> &androidDescripto
 	grallocDescriptor.hal_format = static_cast<uint64_t>(pop_descriptor_uint32(androidDescriptor, &pos));
 	grallocDescriptor.producer_usage = pop_descriptor_uint64(androidDescriptor, &pos);
 	grallocDescriptor.consumer_usage = grallocDescriptor.producer_usage;
-	grallocDescriptor.format_type = MALI_GRALLOC_FORMAT_TYPE_USAGE;
 	grallocDescriptor.signature = sizeof(buffer_descriptor_t);
 	grallocDescriptor.reserved_size = pop_descriptor_uint64(androidDescriptor, &pos);
 

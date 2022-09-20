@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2020-2022 ARM Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -29,8 +29,10 @@
 #include "allocator/allocator.h"
 #include "buffer.h"
 #include "log.h"
-#include "gralloc/attributes.h"
 #include "gralloc/formats.h"
+
+/* For error codes. */
+#include <hardware/gralloc1.h>
 
 #if HIDL_MAPPER_VERSION_SCALED >= 400
 #include "mapper_metadata.h"
@@ -93,7 +95,7 @@ static Error unregisterBuffer(buffer_handle_t bufferHandle)
 		return Error::BAD_BUFFER;
 	}
 
-	const int status = mali_gralloc_reference_release(bufferHandle, true);
+	const int status = mali_gralloc_reference_release(bufferHandle);
 	if (status != 0)
 	{
 		MALI_GRALLOC_LOGE("Unable to release buffer:%p", bufferHandle);
@@ -188,8 +190,9 @@ static Error lockBuffer(buffer_handle_t bufferHandle,
 	}
 
 	auto private_handle = private_handle_t::downcast(bufferHandle);
+	const auto format = private_handle->get_alloc_format();
 	if (private_handle->cpu_write != 0 && (cpuUsage & BufferUsage::CPU_WRITE_MASK)
-	    && private_handle->req_format != MALI_GRALLOC_FORMAT_INTERNAL_BLOB)
+	    && format.get_base() != MALI_GRALLOC_FORMAT_INTERNAL_BLOB)
 	{
 		if (fenceFd >= 0)
 		{
@@ -205,10 +208,18 @@ static Error lockBuffer(buffer_handle_t bufferHandle,
 		sync_wait(fenceFd, -1);
 		close(fenceFd);
 	}
-	if (mali_gralloc_lock(bufferHandle, cpuUsage, accessRegion.left, accessRegion.top, accessRegion.width,
-	                      accessRegion.height, &data) != 0)
+
+	auto result = mali_gralloc_lock(bufferHandle, cpuUsage, accessRegion.left, accessRegion.top, accessRegion.width,
+	                                accessRegion.height, &data);
+	if (result != 0)
 	{
-		return Error::BAD_VALUE;
+		MALI_GRALLOC_LOGE("Locking buffer failed with error: %d", result);
+		if (result == GRALLOC1_ERROR_UNSUPPORTED)
+		{
+			return Error::BAD_BUFFER;
+		}
+
+		return result == -EINVAL ? Error::BAD_VALUE : Error::NO_RESOURCES;
 	}
 
 	*outData = data;
@@ -235,7 +246,7 @@ static Error unlockBuffer(buffer_handle_t bufferHandle,
 	}
 
 	auto private_handle = private_handle_t::downcast(bufferHandle);
-	if (!private_handle->cpu_write && !private_handle->cpu_read)
+	if (private_handle->lock_count == 0)
 	{
 		MALI_GRALLOC_LOGE("Attempt to call unlock*() on an unlocked buffer (%p)", bufferHandle);
 		return Error::BAD_BUFFER;
@@ -399,15 +410,15 @@ void lock(void* buffer, uint64_t cpuUsage, const IMapper::Rect& accessRegion,
 
 	bytesPerStride = hnd->plane_info[0].byte_stride;
 
-	const int32_t format_idx = get_format_index(hnd->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-	if (format_idx == -1)
+	const auto *format_info = hnd->alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
 		MALI_GRALLOC_LOGE("Corrupted buffer format 0x%" PRIx64 " of buffer %p", hnd->alloc_format, hnd);
 		hidl_cb(Error::BAD_VALUE, nullptr, -1, -1);
 		return;
 	}
 
-	bytesPerPixel = formats[format_idx].bpp[0] / 8;
+	bytesPerPixel = format_info->bpp[0] / 8;
 	hidl_cb(error, data, bytesPerPixel, bytesPerStride);
 #else
 	hidl_cb(error, data);
@@ -492,7 +503,12 @@ static Error lockBuffer(buffer_handle_t bufferHandle,
 	if (result)
 	{
 		MALI_GRALLOC_LOGE("Locking(YCbCr) failed with error: %d", result);
-		return Error::BAD_VALUE;
+		if (result == GRALLOC1_ERROR_UNSUPPORTED)
+		{
+			return Error::BAD_BUFFER;
+		}
+
+		return result == -EINVAL ? Error::BAD_VALUE : Error::NO_RESOURCES;
 	}
 
 	outLayout->y = ycbcr.y;
@@ -538,132 +554,79 @@ Error validateBufferSize(void* buffer,
                          uint32_t in_stride)
 {
 	/* The buffer must have been allocated by Gralloc */
-	buffer_handle_t bufferHandle = gRegisteredHandles->get(buffer);
-	if (!bufferHandle)
+	buffer_handle_t buffer_handle = gRegisteredHandles->get(buffer);
+	if (!buffer_handle)
 	{
 		MALI_GRALLOC_LOGE("Buffer: %p has not been registered with Gralloc", buffer);
 		return Error::BAD_BUFFER;
 	}
 
-	if (private_handle_t::validate(bufferHandle) < 0)
+	private_handle_t *gralloc_buffer = private_handle_t::downcast(buffer_handle);
+	if (gralloc_buffer == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Buffer: %p is corrupted", bufferHandle);
+		MALI_GRALLOC_LOGE("Buffer: %p is corrupted", buffer_handle);
 		return Error::BAD_BUFFER;
 	}
 
-	buffer_descriptor_t grallocDescriptor;
-	grallocDescriptor.width = descriptorInfo.width;
-	grallocDescriptor.height = descriptorInfo.height;
-	grallocDescriptor.layer_count = descriptorInfo.layerCount;
-	grallocDescriptor.hal_format = static_cast<uint64_t>(descriptorInfo.format);
-	grallocDescriptor.producer_usage = static_cast<uint64_t>(descriptorInfo.usage);
-	grallocDescriptor.consumer_usage = grallocDescriptor.producer_usage;
-	grallocDescriptor.format_type = MALI_GRALLOC_FORMAT_TYPE_USAGE;
-
-	/* Derive the buffer size for the given descriptor */
-	const int result = mali_gralloc_derive_format_and_size(&grallocDescriptor);
-	if (result)
-	{
-		MALI_GRALLOC_LOGV("Unable to derive format and size for the given descriptor information. error: %d", result);
-		return Error::BAD_VALUE;
-	}
-
 	/* Validate the buffer parameters against descriptor info */
-	private_handle_t *gralloc_buffer = (private_handle_t *)bufferHandle;
 
-	/* The buffer size must be greater than (or equal to) what would have been allocated with descriptor */
-	if ((size_t)gralloc_buffer->size < grallocDescriptor.size)
+	/* The descriptor dimensions must match the buffer */
+	if (static_cast<uint32_t>(gralloc_buffer->width) != descriptorInfo.width)
 	{
-		MALI_GRALLOC_LOGW("Buf size mismatch. Buffer size = %u, Descriptor (derived) size = %zu",
-		       gralloc_buffer->size, grallocDescriptor.size);
+		MALI_GRALLOC_LOGE("Width mismatch. Buffer width = %u, Descriptor width = %u",
+		      gralloc_buffer->width, descriptorInfo.width);
 		return Error::BAD_VALUE;
 	}
 
-	if (in_stride != 0 && (uint32_t)gralloc_buffer->stride != in_stride)
+	if (static_cast<uint32_t>(gralloc_buffer->height) != descriptorInfo.height)
+	{
+		MALI_GRALLOC_LOGE("Height mismatch. Buffer height = %u, Descriptor height = %u",
+		      gralloc_buffer->height, descriptorInfo.height);
+		return Error::BAD_VALUE;
+	}
+
+	if (gralloc_buffer->layer_count != descriptorInfo.layerCount)
+	{
+		MALI_GRALLOC_LOGE("Layer Count mismatch. Buffer layer_count = %u, Descriptor layer_count = %u",
+		      gralloc_buffer->layer_count, descriptorInfo.layerCount);
+		return Error::BAD_VALUE;
+	}
+
+	/* Some usages need to match and the rest of the usage must be a subset of the buffer's usages */
+	uint64_t must_match_mask = GRALLOC_USAGE_PRIVATE_MASK | GRALLOC_USAGE_PROTECTED;
+	uint64_t descriptor_usage = static_cast<uint64_t>(descriptorInfo.usage);
+	uint64_t buffer_usage = gralloc_buffer->producer_usage | gralloc_buffer->consumer_usage;
+
+	if ((buffer_usage & descriptor_usage) != descriptor_usage)
+	{
+		MALI_GRALLOC_LOGE("Usage not a subset. Buffer usage = %#" PRIx64 ", Descriptor usage = %#" PRIx64,
+		      buffer_usage, descriptor_usage);
+		return Error::BAD_VALUE;
+	}
+
+	if ((buffer_usage & must_match_mask) != (descriptor_usage & must_match_mask))
+	{
+		MALI_GRALLOC_LOGE("Usage mismatch. Buffer usage = %#" PRIx64 ", Descriptor usage = %#" PRIx64,
+		      buffer_usage, descriptor_usage);
+		return Error::BAD_VALUE;
+	}
+
+	/* The stride used should match the stride returned on buffer allocation. */
+	if (in_stride != 0 && static_cast<uint32_t>(gralloc_buffer->stride) != in_stride)
 	{
 		MALI_GRALLOC_LOGE("Stride mismatch. Expected stride = %d, Buffer stride = %d",
 		                       in_stride, gralloc_buffer->stride);
 		return Error::BAD_VALUE;
 	}
 
-	if (gralloc_buffer->alloc_format != grallocDescriptor.alloc_format)
+	/* The requested format must match. It may be possible for some formats to be compatible but there are no compelling
+	 * use cases for a more complex check.
+	 */
+	int descriptor_format = static_cast<int>(descriptorInfo.format);
+	if (gralloc_buffer->req_format != descriptor_format)
 	{
-		MALI_GRALLOC_LOGE("Buffer alloc format :0x%" PRIx64" does not match descriptor (derived) alloc format :0x%"
-		      PRIx64, gralloc_buffer->alloc_format, grallocDescriptor.alloc_format);
-		return Error::BAD_VALUE;
-	}
-
-	const int format_idx = get_format_index(gralloc_buffer->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-	if (format_idx == -1)
-	{
-		MALI_GRALLOC_LOGE("Invalid format to validate buffer descriptor");
-		return Error::BAD_VALUE;
-	}
-	else
-	{
-		for (int i = 0; i < formats[format_idx].npln; i++)
-		{
-			/* 若 "src_buffer 的 usage 中的 rk_usage_flags_for_stride_alignment"
-			 *	和 "'grallocDescriptor' 的 usage 中的" 不同,
-			 *		则 "不" 检查 plane 的 byte_stride 和 offset, 因为 显然 会有不等的情况.
-			 *		否则, 可检查.
-			 */
-			if ( get_usage_flag_for_stride_alignment(gralloc_buffer->producer_usage | gralloc_buffer->consumer_usage)
-				!= get_usage_flag_for_stride_alignment(grallocDescriptor.producer_usage
-									| grallocDescriptor.consumer_usage) )
-			{
-			}
-			else
-			{
-				if (gralloc_buffer->plane_info[i].offset != grallocDescriptor.plane_info[i].offset)
-				{
-					MALI_GRALLOC_LOGE("Buffer offset 0x%x mismatch with desc offset 0x%x in plane %d ",
-					      gralloc_buffer->plane_info[i].offset, grallocDescriptor.plane_info[i].offset, i);
-					return Error::BAD_VALUE;
-				}
-
-				if (gralloc_buffer->plane_info[i].byte_stride != grallocDescriptor.plane_info[i].byte_stride)
-				{
-					MALI_GRALLOC_LOGE("Buffer byte stride 0x%x mismatch with desc byte stride 0x%x in plane %d ",
-					      gralloc_buffer->plane_info[i].byte_stride, grallocDescriptor.plane_info[i].byte_stride, i);
-					return Error::BAD_VALUE;
-				}
-			}
-
-			if (gralloc_buffer->plane_info[i].alloc_width != grallocDescriptor.plane_info[i].alloc_width)
-			{
-				MALI_GRALLOC_LOGE("Buffer alloc width 0x%x mismatch with desc alloc width 0x%x in plane %d ",
-				      gralloc_buffer->plane_info[i].alloc_width, grallocDescriptor.plane_info[i].alloc_width, i);
-				return Error::BAD_VALUE;
-			}
-
-			if (gralloc_buffer->plane_info[i].alloc_height != grallocDescriptor.plane_info[i].alloc_height)
-			{
-				MALI_GRALLOC_LOGE("Buffer alloc height 0x%x mismatch with desc alloc height 0x%x in plane %d ",
-				      gralloc_buffer->plane_info[i].alloc_height, grallocDescriptor.plane_info[i].alloc_height, i);
-				return Error::BAD_VALUE;
-			}
-		}
-	}
-
-	if ((uint32_t)gralloc_buffer->width != grallocDescriptor.width)
-	{
-		MALI_GRALLOC_LOGE("Width mismatch. Buffer width = %u, Descriptor width = %u",
-		      gralloc_buffer->width, grallocDescriptor.width);
-		return Error::BAD_VALUE;
-	}
-
-	if ((uint32_t)gralloc_buffer->height != grallocDescriptor.height)
-	{
-		MALI_GRALLOC_LOGE("Height mismatch. Buffer height = %u, Descriptor height = %u",
-		      gralloc_buffer->height, grallocDescriptor.height);
-		return Error::BAD_VALUE;
-	}
-
-	if (gralloc_buffer->layer_count != grallocDescriptor.layer_count)
-	{
-		MALI_GRALLOC_LOGE("Layer Count mismatch. Buffer layer_count = %u, Descriptor layer_count width = %u",
-		      gralloc_buffer->layer_count, grallocDescriptor.layer_count);
+		MALI_GRALLOC_LOGE("Buffer requested format: %#x does not match descriptor format: %#x",
+		                  gralloc_buffer->req_format, descriptor_format);
 		return Error::BAD_VALUE;
 	}
 
@@ -701,19 +664,14 @@ void isSupported(const IMapper::BufferDescriptorInfo& description, IMapper::isSu
 	grallocDescriptor.hal_format = static_cast<uint64_t>(description.format);
 	grallocDescriptor.producer_usage = static_cast<uint64_t>(description.usage);
 	grallocDescriptor.consumer_usage = grallocDescriptor.producer_usage;
-	grallocDescriptor.format_type = MALI_GRALLOC_FORMAT_TYPE_USAGE;
 
 	/* Check if it is possible to allocate a buffer for the given description */
 	const int result = mali_gralloc_derive_format_and_size(&grallocDescriptor);
 	if (result != 0)
 	{
 		MALI_GRALLOC_LOGV("Allocation for the given description will not succeed. error: %d", result);
-		hidl_cb(Error::NO_RESOURCES, false);
 	}
-	else
-	{
-		hidl_cb(Error::NONE, true);
-	}
+	hidl_cb(Error::NONE, result == 0);
 }
 #endif /* HIDL_MAPPER_VERSION_SCALED >= 300 */
 
@@ -729,7 +687,7 @@ void flushLockedBuffer(void *buffer, IMapper::flushLockedBuffer_cb hidl_cb)
 	}
 
 	auto private_handle = static_cast<const private_handle_t *>(handle);
-	if (!private_handle->cpu_write && !private_handle->cpu_read)
+	if (private_handle->lock_count == 0)
 	{
 		MALI_GRALLOC_LOGE("Attempt to call flushLockedBuffer() on an unlocked buffer (%p)", handle);
 		hidl_cb(Error::BAD_BUFFER, hidl_handle{});
@@ -750,7 +708,7 @@ Error rereadLockedBuffer(void *buffer)
 	}
 
 	auto private_handle = static_cast<const private_handle_t *>(handle);
-	if (!private_handle->cpu_write && !private_handle->cpu_read)
+	if (private_handle->lock_count == 0)
 	{
 		MALI_GRALLOC_LOGE("Attempt to call rereadLockedBuffer() on an unlocked buffer (%p)", handle);
 		return Error::BAD_BUFFER;
@@ -804,7 +762,7 @@ void listSupportedMetadataTypes(IMapper::listSupportedMetadataTypes_cb hidl_cb)
 		{ android::gralloc4::MetadataType_ProtectedContent, "", true, false },
 		{ android::gralloc4::MetadataType_Compression, "", true, false },
 		{ android::gralloc4::MetadataType_Interlaced, "", true, false },
-		{ android::gralloc4::MetadataType_ChromaSiting, "", true, false },
+		{ android::gralloc4::MetadataType_ChromaSiting, "", true, true },
 		{ android::gralloc4::MetadataType_PlaneLayouts, "", true, false },
 		{ android::gralloc4::MetadataType_Dataspace, "", true, true },
 		{ android::gralloc4::MetadataType_BlendMode, "", true, true },

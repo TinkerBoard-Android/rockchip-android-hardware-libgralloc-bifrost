@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2016-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -22,6 +22,9 @@
 #include "buffer.h"
 #include "core/buffer_descriptor.h"
 #include "usages.h"
+#include "core/internal_format.h"
+
+#include <optional>
 
 /* Compression scheme */
 enum class AllocBaseType
@@ -149,14 +152,10 @@ int mali_gralloc_buffer_allocate(buffer_descriptor_t *descriptor, private_handle
 
 int mali_gralloc_buffer_free(private_handle_t *handle);
 
-void init_afbc(uint8_t *buf, uint64_t internal_format, const bool is_multi_plane, int w, int h);
-
 uint32_t lcm(uint32_t a, uint32_t b);
 
-bool get_alloc_type(const uint64_t format_ext,
-                    const uint32_t format_idx,
-                    const uint64_t usage,
-                    alloc_type_t * const alloc_type);
+std::optional<alloc_type_t> get_alloc_type(internal_format_t format_ext, uint64_t usage);
+
 
 static inline uint64_t get_usage_flag_for_stride_alignment(uint64_t usage)
 {

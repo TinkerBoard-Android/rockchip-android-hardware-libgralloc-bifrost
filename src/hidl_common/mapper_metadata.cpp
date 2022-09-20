@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Arm Limited.
+ * Copyright (C) 2020-2022 Arm Limited.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -19,11 +19,10 @@
 #include "mapper_metadata.h"
 #include "shared_metadata.h"
 #include "core/format_info.h"
+#include "core/drm_utils.h"
 #include "core/buffer_allocation.h"
 #include "buffer.h"
 #include "log.h"
-#include "gralloc/attributes.h"
-#include "drm_utils.h"
 #include "gralloctypes/Gralloc4.h"
 #include <vector>
 
@@ -176,7 +175,7 @@ static std::vector<std::vector<PlaneLayoutComponent>> plane_layout_components_fr
 			.drm_fourcc = DRM_FORMAT_P210,
 			.components = {
 				{ { Y, 6, 10 } },
-				{ { CB, 6, 10 }, { CB, 22, 10 } }
+				{ { CB, 6, 10 }, { CR, 22, 10 } }
 			}
 		},
 		/* Semi-planar 10 bit YUV 4:2:0 */
@@ -184,7 +183,7 @@ static std::vector<std::vector<PlaneLayoutComponent>> plane_layout_components_fr
 			.drm_fourcc = DRM_FORMAT_P010,
 			.components = {
 				{ { Y, 6, 10 } },
-				{ { CB, 6, 10 }, { CB, 22, 10 } }
+				{ { CB, 6, 10 }, { CR, 22, 10 } }
 			}
 		},
 		/* Planar 8 bit YVU 4:2:0 */
@@ -222,12 +221,16 @@ static std::vector<std::vector<PlaneLayoutComponent>> plane_layout_components_fr
 	/* clang-format on */
 
 	/* Special case for formats that can't be represented by a DRM fourcc */
-	switch (hnd->alloc_format)
+	const auto internal_format = hnd->get_alloc_format();
+	if (!internal_format.has_modifiers())
 	{
-	case MALI_GRALLOC_FORMAT_INTERNAL_RAW10:
-	case MALI_GRALLOC_FORMAT_INTERNAL_RAW12:
-		std::vector<std::vector<PlaneLayoutComponent>> components = { { { RAW, 0, -1 } } };
-		return components;
+		switch (internal_format.get_base())
+		{
+		case MALI_GRALLOC_FORMAT_INTERNAL_RAW10:
+		case MALI_GRALLOC_FORMAT_INTERNAL_RAW12:
+			std::vector<std::vector<PlaneLayoutComponent>> components = { { { RAW, 0, -1 } } };
+			return components;
+		}
 	}
 
 	const uint32_t drm_fourcc = drm_fourcc_from_handle(hnd);
@@ -249,13 +252,13 @@ static std::vector<std::vector<PlaneLayoutComponent>> plane_layout_components_fr
 static android::status_t get_plane_layouts(const private_handle_t *handle, std::vector<PlaneLayout> *layouts)
 {
 	const int num_planes = get_num_planes(handle);
-	int32_t format_index = get_format_index(handle->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-	if (format_index < 0)
+	const auto internal_format = handle->get_alloc_format();
+	const format_info_t *format_info = internal_format.get_base_info();
+	if (format_info == nullptr)
 	{
-		MALI_GRALLOC_LOGE("Negative format index in get_plane_layouts");
+		MALI_GRALLOC_LOGE("Invalid format in get_plane_layouts");
 		return android::BAD_VALUE;
 	}
-	const format_info_t format_info = formats[format_index];
 	std::vector<std::vector<PlaneLayoutComponent>> components = plane_layout_components_from_handle(handle);
 	layouts->reserve(num_planes);
 	for (size_t plane_index = 0; plane_index < num_planes; ++plane_index)
@@ -271,18 +274,21 @@ static android::status_t get_plane_layouts(const private_handle_t *handle, std::
 			plane_size = layer_size - handle->plane_info[plane_index].offset;
 		}
 
-		int64_t sample_increment_in_bits = 0;
-		switch (handle->alloc_format)
+		bool is_raw = false;
+		switch (internal_format.get_base())
 		{
 		case MALI_GRALLOC_FORMAT_INTERNAL_RAW10:
 		case MALI_GRALLOC_FORMAT_INTERNAL_RAW12:
-			sample_increment_in_bits = 0;
+			is_raw = true;
 			break;
-		default:
-			sample_increment_in_bits = (handle->alloc_format & MALI_GRALLOC_INTFMT_AFBC_BASIC)
-			   ? format_info.bpp_afbc[plane_index]
-			   : format_info.bpp[plane_index];
-			break;
+		}
+
+		int64_t sample_increment_in_bits = 0;
+		if (internal_format.has_modifiers() || !is_raw)
+		{
+			sample_increment_in_bits = (internal_format.is_afbc())
+			   ? format_info->bpp_afbc[plane_index]
+			   : format_info->bpp[plane_index];
 		}
 
 		PlaneLayout layout = {.offsetInBytes = handle->plane_info[plane_index].offset,
@@ -291,8 +297,8 @@ static android::status_t get_plane_layouts(const private_handle_t *handle, std::
 			                  .widthInSamples = handle->plane_info[plane_index].alloc_width,
 			                  .heightInSamples = handle->plane_info[plane_index].alloc_height,
 			                  .totalSizeInBytes = plane_size,
-			                  .horizontalSubsampling = (plane_index == 0 ? 1 : format_info.hsub),
-			                  .verticalSubsampling = (plane_index == 0 ? 1 : format_info.vsub),
+			                  .horizontalSubsampling = (plane_index == 0 ? 1 : format_info->hsub),
+			                  .verticalSubsampling = (plane_index == 0 ? 1 : format_info->vsub),
 			                  .components = components.size() > plane_index ? components[plane_index] :
 			                                                                  std::vector<PlaneLayoutComponent>(0) };
 		layouts->push_back(layout);
@@ -388,9 +394,14 @@ void get_metadata(const private_handle_t *handle, const IMapper::MetadataType &m
 		case StandardMetadataType::COMPRESSION:
 		{
 			ExtendableType compression;
-			if (handle->alloc_format & MALI_GRALLOC_INTFMT_AFBC_BASIC)
+			const auto internal_format = handle->get_alloc_format();
+			if (internal_format.is_afbc())
 			{
 				compression = Compression_AFBC;
+			}
+			else if (internal_format.is_afrc())
+			{
+				compression = Compression_AFRC;
 			}
 			else
 			{
@@ -404,18 +415,22 @@ void get_metadata(const private_handle_t *handle, const IMapper::MetadataType &m
 			break;
 		case StandardMetadataType::CHROMA_SITING:
 		{
-			int format_index = get_format_index(handle->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-			if (format_index < 0)
+			const auto *format_info = handle->get_alloc_format().get_base_info();
+			if (format_info == nullptr)
 			{
 				err = android::BAD_VALUE;
 				break;
 			}
-			ExtendableType siting = android::gralloc4::ChromaSiting_None;
-			if (formats[format_index].is_yuv)
+
+			std::optional<ExtendableType> chroma_siting;
+			ExtendableType chroma_siting_default = android::gralloc4::ChromaSiting_None;
+			if (format_info->is_yuv)
 			{
-				siting = android::gralloc4::ChromaSiting_Unknown;
+				chroma_siting_default = android::gralloc4::ChromaSiting_Unknown;
 			}
-			err = android::gralloc4::encodeChromaSiting(siting, &vec);
+
+			get_chroma_siting(handle, &chroma_siting);
+			err = android::gralloc4::encodeChromaSiting(chroma_siting.value_or(chroma_siting_default), &vec);
 			break;
 		}
 		case StandardMetadataType::PLANE_LAYOUTS:
@@ -549,6 +564,31 @@ Error set_metadata(const private_handle_t *handle, const IMapper::MetadataType &
 			}
 			break;
 		}
+		case StandardMetadataType::CHROMA_SITING:
+		{
+			const auto *format_info = handle->get_alloc_format().get_base_info();
+			if (format_info == nullptr)
+			{
+				err = android::BAD_VALUE;
+				break;
+			}
+
+			ExtendableType chroma_siting;
+			err = android::gralloc4::decodeChromaSiting(metadata, &chroma_siting);
+			if (!err)
+			{
+				if (format_info->is_yuv && (chroma_siting.name == GRALLOC4_STANDARD_CHROMA_SITING ||
+				                            chroma_siting.name == GRALLOC_ARM_CHROMA_SITING_TYPE_NAME))
+				{
+					set_chroma_siting(handle, chroma_siting);
+				}
+				else
+				{
+					err = android::BAD_VALUE;
+				}
+			}
+			break;
+		}
 		case StandardMetadataType::BLEND_MODE:
 		{
 			BlendMode blend_mode;
@@ -616,7 +656,6 @@ Error set_metadata(const private_handle_t *handle, const IMapper::MetadataType &
 		case StandardMetadataType::PROTECTED_CONTENT:
 		case StandardMetadataType::COMPRESSION:
 		case StandardMetadataType::INTERLACED:
-		case StandardMetadataType::CHROMA_SITING:
 		case StandardMetadataType::INVALID:
 		default:
 			return Error::UNSUPPORTED;
@@ -644,7 +683,6 @@ void getFromBufferDescriptorInfo(IMapper::BufferDescriptorInfo const &descriptio
 	descriptor.hal_format = static_cast<uint64_t>(description.format);
 	descriptor.producer_usage = static_cast<uint64_t>(description.usage);
 	descriptor.consumer_usage = descriptor.producer_usage;
-	descriptor.format_type = MALI_GRALLOC_FORMAT_TYPE_USAGE;
 
 	/* Check if it is possible to allocate a buffer for the given description */
 	const int alloc_result = mali_gralloc_derive_format_and_size(&descriptor);
@@ -658,7 +696,7 @@ void getFromBufferDescriptorInfo(IMapper::BufferDescriptorInfo const &descriptio
 	 * Used to share functionality with the normal metadata get function that can only use the allocated buffer handle
 	 * and does not have the buffer descriptor available. */
 	private_handle_t partial_handle(0, descriptor.size, descriptor.consumer_usage, descriptor.producer_usage, -1,
-	                                descriptor.hal_format, descriptor.alloc_format, descriptor.width, descriptor.height,
+	                                descriptor.hal_format, descriptor.alloc_format.get_value(), descriptor.width, descriptor.height,
 	                                descriptor.size, descriptor.layer_count, descriptor.plane_info,
 	                                descriptor.pixel_stride);
 	if (android::gralloc4::isStandardMetadataType(metadataType))
@@ -705,9 +743,14 @@ void getFromBufferDescriptorInfo(IMapper::BufferDescriptorInfo const &descriptio
 		case StandardMetadataType::COMPRESSION:
 		{
 			ExtendableType compression;
-			if (partial_handle.alloc_format & MALI_GRALLOC_INTFMT_AFBC_BASIC)
+			const auto internal_format = partial_handle.get_alloc_format();
+			if (internal_format.is_afbc())
 			{
 				compression = Compression_AFBC;
+			}
+			else if (internal_format.is_afrc())
+			{
+				compression = Compression_AFRC;
 			}
 			else
 			{
@@ -721,18 +764,19 @@ void getFromBufferDescriptorInfo(IMapper::BufferDescriptorInfo const &descriptio
 			break;
 		case StandardMetadataType::CHROMA_SITING:
 		{
-			int format_index = get_format_index(partial_handle.alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-			if (format_index < 0)
+			const auto *format_info = partial_handle.get_alloc_format().get_base_info();
+			if (format_info == nullptr)
 			{
 				err = android::BAD_VALUE;
 				break;
 			}
-			ExtendableType siting = android::gralloc4::ChromaSiting_None;
-			if (formats[format_index].is_yuv)
+
+			ExtendableType chroma_siting = android::gralloc4::ChromaSiting_None;
+			if (format_info->is_yuv)
 			{
-				siting = android::gralloc4::ChromaSiting_Unknown;
+				chroma_siting = android::gralloc4::ChromaSiting_Unknown;
 			}
-			err = android::gralloc4::encodeChromaSiting(siting, &vec);
+			err = android::gralloc4::encodeChromaSiting(chroma_siting, &vec);
 			break;
 		}
 		case StandardMetadataType::PLANE_LAYOUTS:
@@ -748,7 +792,7 @@ void getFromBufferDescriptorInfo(IMapper::BufferDescriptorInfo const &descriptio
 		case StandardMetadataType::DATASPACE:
 		{
 			android_dataspace_t dataspace;
-			get_format_dataspace(partial_handle.alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK,
+			get_format_dataspace(partial_handle.get_alloc_format().get_base_info(),
 			                     partial_handle.consumer_usage | partial_handle.producer_usage, partial_handle.width,
 			                     partial_handle.height, &dataspace, &partial_handle.yuv_info);
 			err = android::gralloc4::encodeDataspace(static_cast<Dataspace>(dataspace), &vec);

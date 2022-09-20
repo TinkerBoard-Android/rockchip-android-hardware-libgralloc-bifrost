@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 ARM Limited. All rights reserved.
+ * Copyright (C) 2020, 2022 ARM Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -20,12 +20,7 @@
 #include <inttypes.h>
 #include "log.h"
 #include "core/buffer_descriptor.h"
-
-#if GRALLOC_VERSION_MAJOR == 3
-#include "3.x/mapper_hidl_header.h"
-#elif GRALLOC_VERSION_MAJOR == 4
 #include "4.x/mapper_hidl_header.h"
-#endif
 
 namespace arm
 {
@@ -145,9 +140,8 @@ void getTransportSize(void *buffer, IMapper::getTransportSize_cb hidl_cb);
  *
  * @param description       [in] Description for the buffer
  * @param hidl_cb           [in] HIDL callback function generating -
- *                          error:     NONE, for supported description
- *                                     BAD_VALUE, Otherwise,
- *                          supported: Whether the description can be allocated
+ *                          error: NONE in all cases.
+ *                          supported: Whether the description is valid can be allocated.
  */
 void isSupported(const IMapper::BufferDescriptorInfo &description, IMapper::isSupported_cb hidl_cb);
 #endif /* HIDL_MAPPER_VERSION_SCALED >= 300 */

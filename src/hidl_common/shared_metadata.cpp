@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Arm Limited.
+ * Copyright (C) 2020, 2022 Arm Limited.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -17,7 +17,9 @@
  */
 
 #include "shared_metadata.h"
+#include "mapper_metadata.h"
 #include "log.h"
+#include <aidl/arm/graphics/ChromaSiting.h>
 
 namespace arm
 {
@@ -93,6 +95,8 @@ struct shared_metadata
 	aligned_optional<Rect> crop {};
 	aligned_optional<Cta861_3> cta861_3 {};
 	aligned_optional<Dataspace> dataspace {};
+	/* Store only the value from the ExtendableType as the string in this type is not a fixed size */
+	aligned_optional<int64_t> chroma_siting {};
 	aligned_optional<Smpte2086> smpte2086 {};
 	aligned_inline_vector<uint8_t, 2048> smpte2094_40 {};
 	aligned_inline_vector<char, 256> name {};
@@ -125,17 +129,20 @@ static_assert(sizeof(shared_metadata::cta861_3) == 12, "bad size");
 static_assert(offsetof(shared_metadata, dataspace) == 40, "bad alignment");
 static_assert(sizeof(shared_metadata::dataspace) == 8, "bad size");
 
-static_assert(offsetof(shared_metadata, smpte2086) == 48, "bad alignment");
+static_assert(offsetof(shared_metadata, chroma_siting) == 48, "bad alignment");
+static_assert(sizeof(shared_metadata::chroma_siting) == 16, "bad size");
+
+static_assert(offsetof(shared_metadata, smpte2086) == 64, "bad alignment");
 static_assert(sizeof(shared_metadata::smpte2086) == 44, "bad size");
 
-static_assert(offsetof(shared_metadata, smpte2094_40) == 92, "bad alignment");
+static_assert(offsetof(shared_metadata, smpte2094_40) == 108, "bad alignment");
 static_assert(sizeof(shared_metadata::smpte2094_40) == 2052, "bad size");
 
-static_assert(offsetof(shared_metadata, name) == 2144, "bad alignment");
+static_assert(offsetof(shared_metadata, name) == 2160, "bad alignment");
 static_assert(sizeof(shared_metadata::name) == 260, "bad size");
 
-static_assert(alignof(shared_metadata) == 4, "bad alignment");
-static_assert(sizeof(shared_metadata) == 2404, "bad size");
+static_assert(alignof(shared_metadata) == 8, "bad alignment");
+static_assert(sizeof(shared_metadata) == 2424, "bad size");
 
 void shared_metadata_init(void *memory, std::string_view name)
 {
@@ -187,6 +194,37 @@ void set_dataspace(const private_handle_t *hnd, const Dataspace &dataspace)
 {
 	auto *metadata = reinterpret_cast<shared_metadata *>(hnd->attr_base);
 	metadata->dataspace = aligned_optional(dataspace);
+}
+
+bool chroma_siting_is_arm_value(int64_t val)
+{
+	switch (val)
+	{
+	case static_cast<int64_t>(aidl::arm::graphics::ChromaSiting::COSITED_BOTH):
+	case static_cast<int64_t>(aidl::arm::graphics::ChromaSiting::COSITED_VERTICAL):
+		return true;
+		break;
+	default:
+		return false;
+	}
+}
+void get_chroma_siting(const private_handle_t *hnd, std::optional<ExtendableType> *chroma_siting)
+{
+	auto *metadata = reinterpret_cast<const shared_metadata *>(hnd->attr_base);
+	auto stored_value = metadata->chroma_siting.to_std_optional();
+	if (stored_value.has_value())
+	{
+		int64_t value = stored_value.value();
+		const std::string name = chroma_siting_is_arm_value(value) ? GRALLOC_ARM_CHROMA_SITING_TYPE_NAME :
+			                                                     GRALLOC4_STANDARD_CHROMA_SITING;
+		*chroma_siting = ExtendableType{name, value};
+	}
+}
+
+void set_chroma_siting(const private_handle_t *hnd, const ExtendableType &chroma_siting)
+{
+	auto *metadata = reinterpret_cast<shared_metadata *>(hnd->attr_base);
+	metadata->chroma_siting = aligned_optional(chroma_siting.value);
 }
 
 void get_blend_mode(const private_handle_t *hnd, std::optional<BlendMode> *blend_mode)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Arm Limited. All rights reserved.
+ * Copyright (C) 2020-2022 Arm Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -16,23 +16,16 @@
  * limitations under the License.
  */
 
-/* Using ashmem is deprecated from Android 10. Use memfd on newer Android versions. */
-#define GRALLOC_USE_MEMFD ((PLATFORM_SDK_VERSION > 29) || (GRALLOC_VERSION_MAJOR > 3))
-
-#if GRALLOC_USE_MEMFD
 #include <sys/syscall.h>
 #include <linux/memfd.h>
 #include <fcntl.h>
-#else
-#include <cutils/ashmem.h>
-#endif
+
 #include "shared_memory.h"
 #include "log.h"
 #include "buffer.h"
 
 static int create_file(const char *name, uint64_t size)
 {
-#if GRALLOC_USE_MEMFD
 	int ret = 0, fd = -1;
 
 	fd = syscall(__NR_memfd_create, name, MFD_ALLOW_SEALING);
@@ -67,9 +60,6 @@ fail:
 	}
 
 	return -1;
-#else
-	return ashmem_create_region(name, static_cast<size_t>(size));
-#endif
 }
 
 std::pair<int, void *> gralloc_shared_memory_allocate(const char *name, uint64_t size)

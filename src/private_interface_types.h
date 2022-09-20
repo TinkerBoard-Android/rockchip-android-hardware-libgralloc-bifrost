@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017, 2020 Arm Limited. All rights reserved.
+ * Copyright (C) 2017, 2020, 2022 Arm Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -21,13 +21,6 @@
 #define GRALLOC_ARM_BUFFER_ATTR_DATASPACE_SUPPORT
 
 #include <assert.h>
-
-#ifndef __cplusplus
-/* Android P uses gnu99 for C standard, which has _Static_assert but does not define static_assert. */
-#ifndef static_assert
-#define static_assert _Static_assert
-#endif
-#endif
 
 enum
 {

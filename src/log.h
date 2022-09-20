@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 ARM Limited. All rights reserved.
+ * Copyright (C) 2019, 2022 ARM Limited. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,3 +28,8 @@
 #define MALI_GRALLOC_LOGW(...) ALOGW(__VA_ARGS__)
 #define MALI_GRALLOC_LOGE(...) ALOGE(__VA_ARGS__)
 
+#ifdef __cplusplus
+#include <android-base/logging.h>
+
+#define MALI_GRALLOC_LOG(level) LOG(level)
+#endif

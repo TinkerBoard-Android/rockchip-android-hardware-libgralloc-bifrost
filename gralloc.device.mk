@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Arm Limited.
+# Copyright (C) 2020-2022 Arm Limited.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,22 +15,18 @@
 
 # Configuration that should be included by BoardConfig.mk to configure necessary Soong namespaces.
 
-MALI_GRALLOC_API_TESTS?=0
-
 #
 # Software behaviour defines
 #
 
 # The following defines are used to override default behaviour of which heap is selected for allocations.
 # The default is to pick system heap.
-# The following two defines enable either DMA heap or compound page heap for when the usage has
-# GRALLOC_USAGE_HW_FB or GRALLOC_USAGE_HW_COMPOSER set and GRALLOC_USAGE_HW_VIDEO_ENCODER is not set.
-# These defines should not be enabled at the same time.
+# When enabled, uses DMA heap for when the usage has GRALLOC_USAGE_HW_FB or
+# GRALLOC_USAGE_HW_COMPOSER set and GRALLOC_USAGE_HW_VIDEO_ENCODER is not set.
 GRALLOC_USE_ION_DMA_HEAP?=0
-GRALLOC_USE_ION_COMPOUND_PAGE_HEAP?=0
+# When enabled, allocations for display buffers will use physically contiguous memory.
+GRALLOC_USE_CONTIGUOUS_DISPLAY_MEMORY?=0
 
-# Properly initializes an empty AFBC buffer
-GRALLOC_INIT_AFBC?=0
 # When enabled, forces format to BGRA_8888 for FB usage when HWC is in use
 GRALLOC_HWC_FORCE_BGRA_8888?=0
 # When enabled, disables AFBC for FB usage when HWC is in use
@@ -39,36 +35,32 @@ GRALLOC_HWC_FB_DISABLE_AFBC?=0
 # When enabled, buffers will never be allocated with AFBC
 GRALLOC_ARM_NO_EXTERNAL_AFBC?=0
 
-# When enabled, sets camera capability bit
-GRALLOC_CAMERA_WRITE_RAW16?=1
-
-ifeq ($(GRALLOC_USE_ION_DMA_HEAP), 1)
-ifeq ($(GRALLOC_USE_ION_COMPOUND_PAGE_HEAP), 1)
-$(error "GRALLOC_USE_ION_DMA_HEAP and GRALLOC_USE_ION_COMPOUND_PAGE_HEAP can't be enabled at the same time")
+# For hikey960 use contiguous memory for framebuffer allocations.
+ifeq ($(TARGET_PRODUCT), hikey960)
+GRALLOC_USE_CONTIGUOUS_DISPLAY_MEMORY=1
 endif
-endif
-
-GRALLOC_API_VERSION?=v300
 
 # Setup configuration in Soong namespace
 SOONG_CONFIG_NAMESPACES += arm_gralloc
 SOONG_CONFIG_arm_gralloc := \
 	gralloc_use_ion_dma_heap \
-	gralloc_use_ion_compound_page_heap \
-	gralloc_init_afbc \
+	gralloc_use_contiguous_display_memory \
 	gralloc_hwc_force_bgra_8888 \
 	gralloc_hwc_fb_disable_afbc \
 	gralloc_arm_no_external_afbc \
-	gralloc_camera_write_raw16 \
-	mali_gralloc_api_tests \
-	gralloc_api_version
+	gralloc_target_product
 
 SOONG_CONFIG_arm_gralloc_gralloc_use_ion_dma_heap := $(GRALLOC_USE_ION_DMA_HEAP)
-SOONG_CONFIG_arm_gralloc_gralloc_use_ion_compound_page_heap := $(GRALLOC_USE_ION_COMPOUND_PAGE_HEAP)
-SOONG_CONFIG_arm_gralloc_gralloc_init_afbc := $(GRALLOC_INIT_AFBC)
+SOONG_CONFIG_arm_gralloc_gralloc_use_contiguous_display_memory := $(GRALLOC_USE_CONTIGUOUS_DISPLAY_MEMORY)
 SOONG_CONFIG_arm_gralloc_gralloc_hwc_force_bgra_8888 := $(GRALLOC_HWC_FORCE_BGRA_8888)
 SOONG_CONFIG_arm_gralloc_gralloc_hwc_fb_disable_afbc := $(GRALLOC_HWC_FB_DISABLE_AFBC)
 SOONG_CONFIG_arm_gralloc_gralloc_arm_no_external_afbc := $(GRALLOC_ARM_NO_EXTERNAL_AFBC)
-SOONG_CONFIG_arm_gralloc_gralloc_camera_write_raw16 := $(GRALLOC_CAMERA_WRITE_RAW16)
-SOONG_CONFIG_arm_gralloc_mali_gralloc_api_tests := $(MALI_GRALLOC_API_TESTS)
-SOONG_CONFIG_arm_gralloc_gralloc_api_version := $(GRALLOC_API_VERSION)
+SOONG_CONFIG_arm_gralloc_gralloc_target_product := $(TARGET_PRODUCT)
+
+# Retrieve the directory of Gralloc module
+LOCAL_MODULE_MAKEFILE := $(lastword $(MAKEFILE_LIST)))
+GRALLOC_TOP_DIR := $(strip $(patsubst %/,%,$(dir $(LOCAL_MODULE_MAKEFILE))))
+
+# Add the system properties for Gralloc
+TARGET_VENDOR_PROP += $(GRALLOC_TOP_DIR)/arm.gralloc.usage.prop
+TARGET_VENDOR_PROP += $(GRALLOC_TOP_DIR)/arm.egl.config.prop

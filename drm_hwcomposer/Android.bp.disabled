@@ -17,12 +17,14 @@
 
 cc_library_shared {
 	name: "hwcomposer.drm_mappermetadata",
-	defaults: ["hwcomposer.drm_defaults"],
+	defaults: [
+		"hwcomposer.drm_defaults",
+		"arm_gralloc_uses_aidl_defaults",
+	],
 	srcs: ["BufferInfoMapperMetadata.cpp"],
 	whole_static_libs: ["drm_hwcomposer"],
 	shared_libs: [
-		"arm.graphics-ndk_platform",
 		"libgralloctypes",
-		"android.hardware.graphics.mapper@4.0"
-	]
+		"android.hardware.graphics.mapper@4.0",
+	],
 }

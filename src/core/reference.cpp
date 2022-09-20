@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016, 2018-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2016, 2018-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -17,16 +17,19 @@
  */
 
 #include <hardware/gralloc1.h>
+#include <mutex>
 
 #include "private_interface_types.h"
 #include "buffer.h"
 #include "allocator/allocator.h"
 #include "allocator/shared_memory/shared_memory.h"
-#include "gralloc/attributes.h"
 #include "buffer_allocation.h"
 #include "gralloc_version.h"
+#include "buffer_access.h"
 
-static pthread_mutex_t s_map_lock = PTHREAD_MUTEX_INITIALIZER;
+using scoped_mutex = std::lock_guard<std::mutex>;
+
+static std::mutex s_map_lock;
 
 int mali_gralloc_reference_retain(buffer_handle_t handle)
 {
@@ -37,27 +40,19 @@ int mali_gralloc_reference_retain(buffer_handle_t handle)
 	}
 
 	private_handle_t *hnd = (private_handle_t *)handle;
-	pthread_mutex_lock(&s_map_lock);
+	scoped_mutex lock(s_map_lock);
 
-	if (hnd->allocating_pid == getpid() || hnd->remote_pid == getpid())
-	{
-		hnd->ref_count++;
-		pthread_mutex_unlock(&s_map_lock);
-		return 0;
-	}
-	else
+	/* Ensure the state is valid for newly registered buffers */
+	hnd->base = nullptr;
+	if (hnd->allocating_pid != getpid() && hnd->remote_pid != getpid())
 	{
 		hnd->remote_pid = getpid();
-		hnd->ref_count = 1;
 	}
 
-	int retval = allocator_map(hnd);
-
-	pthread_mutex_unlock(&s_map_lock);
-	return retval;
+	return 0;
 }
 
-int mali_gralloc_reference_release(buffer_handle_t handle, bool canFree)
+int mali_gralloc_reference_release(buffer_handle_t handle)
 {
 	if (private_handle_t::validate(handle) < 0)
 	{
@@ -66,44 +61,29 @@ int mali_gralloc_reference_release(buffer_handle_t handle, bool canFree)
 	}
 
 	private_handle_t *hnd = (private_handle_t *)handle;
-	pthread_mutex_lock(&s_map_lock);
-
-	if (hnd->ref_count == 0)
-	{
-		MALI_GRALLOC_LOGE("Buffer %p should have already been released", handle);
-		pthread_mutex_unlock(&s_map_lock);
-		return -EINVAL;
-	}
+	scoped_mutex lock(s_map_lock);
 
 	if (hnd->allocating_pid == getpid())
 	{
-		hnd->ref_count--;
+		mali_unmap_buffer(hnd);
 
-		if (hnd->ref_count == 0 && canFree)
-		{
-			mali_gralloc_buffer_free(hnd);
-			native_handle_delete(const_cast<native_handle_t *>(handle));
-		}
+		mali_gralloc_buffer_free(hnd);
+		native_handle_delete(const_cast<native_handle_t *>(handle));
 	}
 	else if (hnd->remote_pid == getpid()) // never unmap buffers that were not imported into this process
 	{
-		hnd->ref_count--;
+		mali_unmap_buffer(hnd);
 
-		if (hnd->ref_count == 0)
-		{
-			allocator_unmap(hnd);
-
-			/*
-			 * Close shared attribute region file descriptor. It might seem strange to "free"
-			 * this here since this can happen in a client process, but free here is nothing
-			 * but unmapping and closing the duplicated file descriptor. The original shared
-			 * fd instance is still open until alloc_device_free() is called. Even sharing
-			 * of gralloc buffers within the same process should have fds dup:ed.
-			 */
-			gralloc_shared_memory_free(hnd->share_attr_fd, hnd->attr_base, hnd->attr_size);
-			hnd->share_attr_fd = -1;
-			hnd->attr_base = MAP_FAILED;
-		}
+		/*
+		 * Close shared attribute region file descriptor. It might seem strange to "free"
+		 * this here since this can happen in a client process, but free here is nothing
+		 * but unmapping and closing the duplicated file descriptor. The original shared
+		 * fd instance is still open until alloc_device_free() is called. Even sharing
+		 * of gralloc buffers within the same process should have fds dup:ed.
+		 */
+		gralloc_shared_memory_free(hnd->share_attr_fd, hnd->attr_base, hnd->attr_size);
+		hnd->share_attr_fd = -1;
+		hnd->attr_base = MAP_FAILED;
 	}
 	else
 	{
@@ -111,6 +91,5 @@ int mali_gralloc_reference_release(buffer_handle_t handle, bool canFree)
 		     hnd->remote_pid, getpid());
 	}
 
-	pthread_mutex_unlock(&s_map_lock);
 	return 0;
 }

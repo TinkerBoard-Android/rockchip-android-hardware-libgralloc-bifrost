@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2016-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -107,13 +107,11 @@ struct ion_device
 	 * @param size      [in]    Requested buffer size (in bytes).
 	 * @param heap_type [in]    Requested heap type.
 	 * @param flags     [in]    ION allocation attributes defined by ION_FLAG_*.
-	 * @param min_pgsz  [out]   Minimum page size (in bytes).
 	 *
 	 * @return File handle which can be used for allocation, on success
 	 *         -1, otherwise.
 	 */
-	int alloc_from_ion_heap(uint64_t usage, size_t size, enum ion_heap_type heap_type, unsigned int flags,
-	                        int *min_pgsz);
+	int alloc_from_ion_heap(size_t size, enum ion_heap_type heap_type, unsigned int flags);
 
 	enum ion_heap_type pick_ion_heap(uint64_t usage);
 
@@ -184,26 +182,21 @@ static void set_ion_flags(enum ion_heap_type heap_type, uint64_t usage,
 	}
 }
 
-int ion_device::alloc_from_ion_heap(uint64_t usage, size_t size, enum ion_heap_type heap_type, unsigned int flags,
-                                    int *min_pgsz)
+int ion_device::alloc_from_ion_heap(size_t size, enum ion_heap_type heap_type, unsigned int flags)
 {
 	int shared_fd = -1;
 	int ret = -1;
 
 	if (ion_client < 0 ||
 	    size <= 0 ||
-	    heap_type == ION_HEAP_TYPE_INVALID ||
-	    min_pgsz == NULL)
+	    heap_type == ION_HEAP_TYPE_INVALID)
 	{
 		return -1;
 	}
 
-	bool system_heap_exist = false;
-
 	if (use_legacy_ion == false)
 	{
 		int i = 0;
-		bool is_heap_matched = false;
 
 		/* Attempt to allocate memory from each matching heap type (of
 		 * enumerated heaps) until successful
@@ -212,24 +205,13 @@ int ion_device::alloc_from_ion_heap(uint64_t usage, size_t size, enum ion_heap_t
 		{
 			if (heap_type == heap_info[i].type)
 			{
-				is_heap_matched = true;
 				ret = ion_alloc_fd(ion_client, size, 0,
 				                   HEAP_MASK_FROM_ID(heap_info[i].heap_id),
 				                   flags, &shared_fd);
 			}
 
-			if (heap_info[i].type == ION_HEAP_TYPE_SYSTEM)
-			{
-				system_heap_exist = true;
-			}
-
 			i++;
 		} while ((ret < 0) && (i < heap_cnt));
-
-		if (is_heap_matched == false)
-		{
-			MALI_GRALLOC_LOGE("Failed to find matching ION heap. Trying to fall back on system heap");
-		}
 	}
 	else
 	{
@@ -242,98 +224,10 @@ int ion_device::alloc_from_ion_heap(uint64_t usage, size_t size, enum ion_heap_t
 		ret = ion_alloc_fd(ion_client, size, 0, heap_mask, flags, &shared_fd);
 	}
 
-	/* Check if allocation from selected heap failed and fall back to system
-	 * heap if possible.
-	 */
 	if (ret < 0)
 	{
-		/* Don't allow falling back to sytem heap if secure was requested. */
-		if (heap_type == ION_HEAP_TYPE_SECURE)
-		{
-			return -1;
-		}
-
-		/* Can't fall back to system heap if system heap was the heap that
-		 * already failed
-		 */
-		if (heap_type == ION_HEAP_TYPE_SYSTEM)
-		{
-			MALI_GRALLOC_LOGE("%s: Allocation failed on on system heap. Cannot fallback.", __func__);
-			return -1;
-		}
-
-		heap_type = ION_HEAP_TYPE_SYSTEM;
-
-		/* Set ION flags for system heap allocation */
-		set_ion_flags(heap_type, usage, NULL, &flags);
-
-		if (use_legacy_ion == false)
-		{
-			int i = 0;
-
-			if (system_heap_exist == false)
-			{
-				MALI_GRALLOC_LOGE("%s: System heap not available for fallback", __func__);
-				return -1;
-			}
-
-			/* Attempt to allocate memory from each system heap type (of
-			 * enumerated heaps) until successful
-			 */
-			do
-			{
-				if (heap_info[i].type == ION_HEAP_TYPE_SYSTEM)
-				{
-					ret = ion_alloc_fd(ion_client, size, 0,
-					                   HEAP_MASK_FROM_ID(heap_info[i].heap_id),
-					                   flags, &shared_fd);
-				}
-
-				i++;
-			} while ((ret < 0) && (i < heap_cnt));
-		}
-		else /* Use legacy ION API */
-		{
-			ret = ion_alloc_fd(ion_client, size, 0,
-			                   HEAP_MASK_FROM_TYPE(heap_type),
-			                   flags, &shared_fd);
-		}
-
-		if (ret != 0)
-		{
-			MALI_GRALLOC_LOGE("Fallback ion_alloc_fd(%d, %zd, %d, %u, %p) failed",
-			      ion_client, size, 0, flags, &shared_fd);
-			return -1;
-		}
-	}
-
-	switch (heap_type)
-	{
-	case ION_HEAP_TYPE_SYSTEM:
-		*min_pgsz = SZ_4K;
-		break;
-
-	case ION_HEAP_TYPE_SYSTEM_CONTIG:
-	case ION_HEAP_TYPE_CARVEOUT:
-#if defined(GRALLOC_USE_ION_DMA_HEAP) && GRALLOC_USE_ION_DMA_HEAP
-	case ION_HEAP_TYPE_DMA:
-		*min_pgsz = size;
-		break;
-#endif
-#if defined(GRALLOC_USE_ION_COMPOUND_PAGE_HEAP) && GRALLOC_USE_ION_COMPOUND_PAGE_HEAP
-	case ION_HEAP_TYPE_COMPOUND_PAGE:
-		*min_pgsz = SZ_2M;
-		break;
-#endif
-	/* If have customized heap please set the suitable pg type according to
-	 * the customized ION implementation
-	 */
-	case ION_HEAP_TYPE_CUSTOM:
-		*min_pgsz = SZ_4K;
-		break;
-	default:
-		*min_pgsz = SZ_4K;
-		break;
+		MALI_GRALLOC_LOGE("%s: Allocation failed.", __func__);
+		return -1;
 	}
 
 	return shared_fd;
@@ -356,9 +250,8 @@ enum ion_heap_type ion_device::pick_ion_heap(uint64_t usage)
 	}
 	else if (!(usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) && (usage & GRALLOC_USAGE_HW_FB))
 	{
-#if defined(GRALLOC_USE_ION_COMPOUND_PAGE_HEAP) && GRALLOC_USE_ION_COMPOUND_PAGE_HEAP
-		heap_type = ION_HEAP_TYPE_COMPOUND_PAGE;
-#elif defined(GRALLOC_USE_ION_DMA_HEAP) && GRALLOC_USE_ION_DMA_HEAP
+#if defined(GRALLOC_USE_ION_DMA_HEAP) && GRALLOC_USE_ION_DMA_HEAP && \
+    defined(GRALLOC_USE_CONTIGUOUS_DISPLAY_MEMORY) && GRALLOC_USE_CONTIGUOUS_DISPLAY_MEMORY
 		heap_type = ION_HEAP_TYPE_DMA;
 #else
 		heap_type = ION_HEAP_TYPE_SYSTEM;
@@ -537,121 +430,48 @@ void allocator_free(private_handle_t *handle)
 
 int allocator_allocate(const buffer_descriptor_t *descriptor, private_handle_t **out_handle)
 {
-	unsigned int priv_heap_flag = 0;
-	enum ion_heap_type heap_type;
-	uint64_t usage;
-	uint32_t max_buffer_index = 0;
-	int shared_fd = -1;
-	unsigned int ion_flags = 0;
-	int min_pgsz = 0;
-	private_handle_t *handle = nullptr;
 	int ret = 0;
 
 	ion_device *dev = ion_device::get();
 	if (!dev)
 	{
 		MALI_GRALLOC_LOGE("Failed to obtain ion device");
-		ret = -ENODEV;
-		goto fail;
+		return -ENODEV;
 	}
 
-	usage = descriptor->consumer_usage | descriptor->producer_usage;
-	heap_type = dev->pick_ion_heap(usage);
+	uint64_t usage = descriptor->consumer_usage | descriptor->producer_usage;
+	enum ion_heap_type heap_type = dev->pick_ion_heap(usage);
 	if (heap_type == ION_HEAP_TYPE_INVALID)
 	{
 		MALI_GRALLOC_LOGE("Failed to find an appropriate ion heap");
-		ret = -ENOMEM;
-		goto fail;
+		return -ENOMEM;
 	}
 
+	unsigned int priv_heap_flag = 0;
+	unsigned int ion_flags = 0;
 	set_ion_flags(heap_type, usage, &priv_heap_flag, &ion_flags);
 
-	shared_fd = dev->alloc_from_ion_heap(usage, descriptor->size, heap_type, ion_flags, &min_pgsz);
+	android::base::unique_fd shared_fd{
+		dev->alloc_from_ion_heap(descriptor->size, heap_type, ion_flags)};
 	if (shared_fd < 0)
 	{
 		MALI_GRALLOC_LOGE("ion_alloc failed from client with pid %d", dev->client());
-		ret = -ENOMEM;
-		goto fail;
+		return -ENOMEM;
 	}
 
-	handle = make_private_handle(
+	private_handle_t *handle = make_private_handle(
 	    priv_heap_flag, descriptor->size, descriptor->consumer_usage,
-	    descriptor->producer_usage, shared_fd, descriptor->hal_format, descriptor->alloc_format,
+	    descriptor->producer_usage, std::move(shared_fd), descriptor->hal_format, descriptor->alloc_format,
 	    descriptor->width, descriptor->height, descriptor->size, descriptor->layer_count,
 	    descriptor->plane_info, descriptor->pixel_stride);
 	if (nullptr == handle)
 	{
 		MALI_GRALLOC_LOGE("Private handle could not be created for descriptor");
-		ret = -ENOMEM;
-		goto fail;
-	}
-	else
-	{
-		/* Ownership transferred to handle. */
-		shared_fd = -1;
+		return -ENOMEM;
 	}
 
-	if (usage & GRALLOC_USAGE_PROTECTED)
-	{
-		goto success;
-	}
-
-	ret = allocator_map(handle);
-	if (ret != 0)
-	{
-		MALI_GRALLOC_LOGE("mmap failed from client ( %d ), fd ( %d )", dev->client(), handle->share_fd);
-		goto fail;
-	}
-
-#ifndef GRALLOC_INIT_AFBC
-#define GRALLOC_INIT_AFBC 0
-#endif
-	if (GRALLOC_INIT_AFBC && is_format_afbc(descriptor->alloc_format))
-	{
-		allocator_sync_start(handle, true, true);
-
-		/* For separated plane YUV, there is a header to initialise per plane. */
-		const plane_info_t *plane_info = descriptor->plane_info;
-		const bool is_multi_plane = handle->is_multi_plane();
-		for (int i = 0; i < MAX_PLANES && (i == 0 || plane_info[i].byte_stride != 0); i++)
-		{
-			init_afbc(static_cast<uint8_t *>(handle->base) + plane_info[i].offset,
-			          descriptor->alloc_format,
-			          is_multi_plane,
-			          plane_info[i].alloc_width,
-			          plane_info[i].alloc_height);
-		}
-
-		private_handle_t* hnd= handle;
-		if (((hnd->req_format == 0x30 || hnd->req_format == 0x31 || hnd->req_format == 0x32 ||
-			hnd->req_format == 0x33 || hnd->req_format == 0x34 || hnd->req_format == 0x35) &&
-			hnd->width <= 100 && hnd->height <= 100) ||
-			(hnd->req_format == 0x23 && hnd->width == 100 && hnd->height == 100))
-		{
-			ALOGE("rk-debug workaround for NativeHareware format = %x producer_usage : 0x%" PRIx64 ", consumer_usage : 0x%" PRIx64,
-					hnd->req_format, hnd->producer_usage, hnd->consumer_usage);
-			ret = -1;
-			goto fail;
-		}
-
-		allocator_sync_end(handle, true, true);
-	}
-success:
 	*out_handle = handle;
 	return 0;
-fail:
-	if (shared_fd != -1)
-	{
-		close(shared_fd);
-	}
-
-	if (handle != nullptr)
-	{
-		allocator_free(handle);
-		native_handle_delete(handle);
-	}
-
-	return ret;
 }
 
 int allocator_map(private_handle_t *handle)
@@ -672,7 +492,7 @@ int allocator_map(private_handle_t *handle)
 		return -errno;
 	}
 
-	handle->base = static_cast<std::byte *>(mapping) + handle->offset;
+	handle->base = static_cast<std::byte *>(mapping);
 
 	return 0;
 }
@@ -684,7 +504,7 @@ void allocator_unmap(private_handle_t *handle)
 		return;
 	}
 
-	void *base = static_cast<std::byte *>(handle->base) - handle->offset;
+	void *base = static_cast<std::byte *>(handle->base);
 	if (munmap(base, handle->size) < 0)
 	{
 		MALI_GRALLOC_LOGE("Could not munmap base:%p size:%d '%s'", base, handle->size, strerror(errno));
@@ -692,7 +512,7 @@ void allocator_unmap(private_handle_t *handle)
 	else
 	{
 		handle->base = 0;
-		handle->cpu_read = 0;
+		handle->lock_count = 0;
 		handle->cpu_write = 0;
 	}
 }

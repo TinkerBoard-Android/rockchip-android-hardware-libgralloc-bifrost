@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Arm Limited. All rights reserved.
+ * Copyright (C) 2020-2022 Arm Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -21,15 +21,11 @@
 #include "log.h"
 #include "core/buffer_descriptor.h"
 #include "buffer.h"
-
-#if GRALLOC_VERSION_MAJOR < 4
-#error "Metadata supported only on Gralloc 4.X and later"
-#elif GRALLOC_VERSION_MAJOR == 4
 #include "4.x/mapper_hidl_header.h"
-#endif
 
 #include <aidl/arm/graphics/Compression.h>
 #include <aidl/arm/graphics/ArmMetadataType.h>
+#include <aidl/arm/graphics/ChromaSiting.h>
 
 
 namespace arm
@@ -45,10 +41,18 @@ using aidl::android::hardware::graphics::common::ExtendableType;
 const static ExtendableType Compression_AFBC{ GRALLOC_ARM_COMPRESSION_TYPE_NAME,
                                                   static_cast<int64_t>(aidl::arm::graphics::Compression::AFBC) };
 
+const static ExtendableType Compression_AFRC{ GRALLOC_ARM_COMPRESSION_TYPE_NAME,
+                                                  static_cast<int64_t>(aidl::arm::graphics::Compression::AFRC) };
+
 #define GRALLOC_ARM_METADATA_TYPE_NAME "arm.graphics.ArmMetadataType"
 const static IMapper::MetadataType ArmMetadataType_PLANE_FDS{ GRALLOC_ARM_METADATA_TYPE_NAME,
                                                   static_cast<int64_t>(aidl::arm::graphics::ArmMetadataType::PLANE_FDS) };
 
+#define GRALLOC_ARM_CHROMA_SITING_TYPE_NAME "arm.graphics.ChromaSiting"
+const static ExtendableType ChromaSiting_CositedVertical{ GRALLOC_ARM_CHROMA_SITING_TYPE_NAME,
+                                                  static_cast<int64_t>(aidl::arm::graphics::ChromaSiting::COSITED_VERTICAL) };
+const static ExtendableType ChromaSiting_CositedBoth{ GRALLOC_ARM_CHROMA_SITING_TYPE_NAME,
+                                                  static_cast<int64_t>(aidl::arm::graphics::ChromaSiting::COSITED_BOTH) };
 /**
  * Retrieves a Buffer's metadata value.
  *

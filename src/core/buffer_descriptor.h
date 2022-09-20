@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 Arm Limited. All rights reserved.
+ * Copyright (C) 2016-2022 Arm Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -18,9 +18,10 @@
 
 #pragma once
 
-#include "buffer.h"
-#include "gralloc/formats.h"
 #include <string>
+
+#include "buffer.h"
+#include "internal_format.h"
 
 /* A buffer_descriptor contains the requested parameters for the buffer
  * as well as the calculated parameters that are passed to the allocator.
@@ -28,43 +29,24 @@
 struct buffer_descriptor_t
 {
 	/* For validation. */
-	uint32_t signature;
+	uint32_t signature{};
 
 	/* Requested parameters from IAllocator. */
-	uint32_t width;
-	uint32_t height;
-	uint64_t producer_usage;
-	uint64_t consumer_usage;
-	uint64_t hal_format;
-	uint32_t layer_count;
-	mali_gralloc_format_type format_type;
-	std::string name;
-	uint64_t reserved_size;
+	uint32_t width{};
+	uint32_t height{};
+	uint64_t producer_usage{};
+	uint64_t consumer_usage{};
+	uint64_t hal_format{};
+	uint32_t layer_count{};
+	std::string name{"Unnamed"};
+	uint64_t reserved_size{};
 
 	/*
 	 * Calculated values that will be passed to the allocator in order to
 	 * allocate the buffer.
 	 */
-	size_t size;
-	int pixel_stride;
-	uint64_t alloc_format;
-	plane_info_t plane_info[MAX_PLANES];
-
-	buffer_descriptor_t() :
-	    signature(0),
-	    width(0),
-	    height(0),
-	    producer_usage(0),
-	    consumer_usage(0),
-	    hal_format(0),
-	    layer_count(0),
-	    format_type(MALI_GRALLOC_FORMAT_TYPE_USAGE),
-	    name("Unnamed"),
-	    reserved_size(0),
-	    size(0),
-	    pixel_stride(0),
-	    alloc_format(0)
-	{
-		memset(plane_info, 0, sizeof(plane_info_t) * MAX_PLANES);
-	}
+	size_t size{};
+	int pixel_stride{};
+	internal_format_t alloc_format{};
+	plane_layout plane_info{};
 };

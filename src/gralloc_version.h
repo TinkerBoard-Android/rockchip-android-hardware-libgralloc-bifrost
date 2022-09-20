@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017, 2019-2020 Arm Limited. All rights reserved.
+ * Copyright (C) 2017, 2019-2022 Arm Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -27,42 +27,19 @@
 #include <sys/mman.h>
 #include <cutils/native_handle.h>
 
-/* As this file is included by clients, support GRALLOC_USE_GRALLOC1_API
- * flag for 0.3 and 1.0 clients. 2.x+ clients must set GRALLOC_VERSION_MAJOR,
- * which is supported for all versions.
- */
 #ifndef GRALLOC_VERSION_MAJOR
 #error "GRALLOC_VERSION_MAJOR must be defined."
 #endif
 
-#if  GRALLOC_VERSION_MAJOR == 3
-    /* Allocator = 3.0, Mapper = 3.0 and Common = 1.2 */
-    #define HIDL_ALLOCATOR_VERSION_SCALED 300
-    #define HIDL_MAPPER_VERSION_SCALED 300
-    #define HIDL_COMMON_VERSION_SCALED 120
-#elif GRALLOC_VERSION_MAJOR == 4
+#if GRALLOC_VERSION_MAJOR == 4
     /* Allocator = 4.0, Mapper = 4.0 and Common = 1.2 */
     #define HIDL_ALLOCATOR_VERSION_SCALED 400
     #define HIDL_MAPPER_VERSION_SCALED 400
     #define HIDL_COMMON_VERSION_SCALED 120
-#endif
-
-#if (GRALLOC_VERSION_MAJOR != 4) &&(GRALLOC_VERSION_MAJOR != 3)
-    #error " Gralloc version $(GRALLOC_VERSION_MAJOR) is not supported"
+#else
+    #error "Gralloc version $(GRALLOC_VERSION_MAJOR) is not supported"
 #endif
 
 #include "gralloc/formats.h"
 #include "usages.h"
 #include "helper_functions.h"
-
-#if (GRALLOC_VERSION_MAJOR != 1) || !defined(GRALLOC_DISABLE_PRIVATE_BUFFER_DEF)
-
-/*
- * This header file contains the private buffer definition. For gralloc 0.3 it will
- * always be exposed, but for gralloc 1.0 it will be removed at some point in the future.
- *
- * GRALLOC_DISABLE_PRIVATE_BUFFER_DEF is intended for DDKs to test while implementing
- * the new private API.
- */
-#include "buffer.h"
-#endif

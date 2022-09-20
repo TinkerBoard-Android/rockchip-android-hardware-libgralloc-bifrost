@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2020-2022 ARM Limited. All rights reserved.
  *
  * Copyright 2016 The Android Open Source Project
  *
@@ -19,23 +19,15 @@
 // #define ENABLE_DEBUG_LOG
 #include "../custom_log.h"
 
-/* Legacy shared attribute region is deprecated from Android 11.
- * Use the new shared metadata region defined for Gralloc 4.
- */
-#define GRALLOC_USE_SHARED_METADATA (GRALLOC_VERSION_MAJOR > 3)
-
 #include "allocator.h"
-#if GRALLOC_USE_SHARED_METADATA
 #include "shared_metadata.h"
-#else
-#include "gralloc/attributes.h"
-#endif
 
 #include "core/buffer_allocation.h"
 #include "core/buffer_descriptor.h"
 #include "core/format_info.h"
 #include "allocator/allocator.h"
 #include "allocator/shared_memory/shared_memory.h"
+#include "mapper_metadata.h"
 #include "gralloc_version.h"
 
 namespace arm
@@ -44,6 +36,54 @@ namespace allocator
 {
 namespace common
 {
+
+using aidl::android::hardware::graphics::common::ExtendableType;
+
+/* Get the default chroma siting to use based on the format. */
+static void get_format_default_chroma_siting(internal_format_t format, ExtendableType *chroma_siting)
+{
+	*chroma_siting = android::gralloc4::ChromaSiting_Unknown;
+	const auto *format_info = format.get_base_info();
+	if (format_info == nullptr)
+	{
+		return;
+	}
+
+	if (format_info->is_yuv)
+	{
+	        /* Default chroma siting values based on format */
+		switch (format.get_base())
+		{
+		case MALI_GRALLOC_FORMAT_INTERNAL_NV12:
+		case MALI_GRALLOC_FORMAT_INTERNAL_NV15:
+		case MALI_GRALLOC_FORMAT_INTERNAL_NV21:
+		case MALI_GRALLOC_FORMAT_INTERNAL_P010:
+		case MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I:
+		case MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I:
+		case MALI_GRALLOC_FORMAT_INTERNAL_Y0L2:
+			*chroma_siting = android::gralloc4::ChromaSiting_SitedInterstitial;
+			break;
+		case MALI_GRALLOC_FORMAT_INTERNAL_Y210:
+		case MALI_GRALLOC_FORMAT_INTERNAL_P210:
+			*chroma_siting = android::gralloc4::ChromaSiting_CositedHorizontal;
+			break;
+		case MALI_GRALLOC_FORMAT_INTERNAL_NV16:
+		case MALI_GRALLOC_FORMAT_INTERNAL_Y410:
+		case MALI_GRALLOC_FORMAT_INTERNAL_YUV444:
+		case MALI_GRALLOC_FORMAT_INTERNAL_Q410:
+		case MALI_GRALLOC_FORMAT_INTERNAL_Q401:
+		case MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT:
+			*chroma_siting = arm::mapper::common::ChromaSiting_CositedBoth;
+			break;
+		default:
+			MALI_GRALLOC_LOG(WARNING) << "No default Chroma Siting found for format " << format;
+		}
+	}
+	else if (format_info->is_rgb)
+	{
+		*chroma_siting = android::gralloc4::ChromaSiting_None;
+	}
+}
 
 void allocate(buffer_descriptor_t *bufferDescriptor, uint32_t count, IAllocator::allocate_cb hidl_cb)
 {
@@ -65,12 +105,8 @@ void allocate(buffer_descriptor_t *bufferDescriptor, uint32_t count, IAllocator:
 
 		hnd->imapper_version = HIDL_MAPPER_VERSION_SCALED;
 
-#if GRALLOC_USE_SHARED_METADATA
 		hnd->reserved_region_size = bufferDescriptor->reserved_size;
 		hnd->attr_size = mapper::common::shared_metadata_size() + hnd->reserved_region_size;
-#else
-		hnd->attr_size = sizeof(attr_region);
-#endif
 		std::tie(hnd->share_attr_fd, hnd->attr_base) =
 			gralloc_shared_memory_allocate("gralloc_shared_memory", hnd->attr_size);
 		if (hnd->share_attr_fd < 0 || hnd->attr_base == MAP_FAILED)
@@ -81,23 +117,20 @@ void allocate(buffer_descriptor_t *bufferDescriptor, uint32_t count, IAllocator:
 			break;
 		}
 
-#if GRALLOC_USE_SHARED_METADATA
 		mapper::common::shared_metadata_init(hnd->attr_base, bufferDescriptor->name);
-#else
-		new(hnd->attr_base) attr_region;
-#endif
-		const uint32_t base_format = bufferDescriptor->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
+		const auto internal_format = bufferDescriptor->alloc_format;
 		const uint64_t usage = bufferDescriptor->consumer_usage | bufferDescriptor->producer_usage;
 		android_dataspace_t dataspace;
-		get_format_dataspace(base_format, usage, hnd->width, hnd->height, &dataspace, &hnd->yuv_info);
+		const auto *format_info = internal_format.get_base_info();
+		get_format_dataspace(format_info, usage, hnd->width, hnd->height, &dataspace, &hnd->yuv_info);
 
-#if GRALLOC_USE_SHARED_METADATA
+		ExtendableType chroma_siting;
+		get_format_default_chroma_siting(internal_format, &chroma_siting);
+
 		mapper::common::set_dataspace(hnd, static_cast<mapper::common::Dataspace>(dataspace));
-#else
-		int temp_dataspace = static_cast<int>(dataspace);
-		gralloc_buffer_attr_write(hnd, GRALLOC_ARM_BUFFER_ATTR_DATASPACE, &temp_dataspace);
-#endif
-                /*
+		mapper::common::set_chroma_siting(hnd, chroma_siting);
+
+		/*
 		* We need to set attr_base to MAP_FAILED before the HIDL callback
 		* to avoid sending an invalid pointer to the client process.
 		*

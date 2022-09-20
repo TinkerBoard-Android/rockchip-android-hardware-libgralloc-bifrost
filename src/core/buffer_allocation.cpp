@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 ARM Limited. All rights reserved.
+ * Copyright (C) 2016-2022 ARM Limited. All rights reserved.
  *
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -32,16 +32,15 @@
 #include "allocator/shared_memory/shared_memory.h"
 #include "private_interface_types.h"
 #include "buffer.h"
-#include "gralloc/attributes.h"
 #include "buffer_descriptor.h"
 #include "log.h"
 #include "format_info.h"
+#include "format_selection.h"
 #include "usages.h"
+#include "helper_functions.h"
 
 #define AFBC_PIXELS_PER_BLOCK 256
 #define AFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY 16
-
-bool afbc_format_fallback(uint32_t * const format_idx, const uint64_t usage, bool force);
 
 
 /*
@@ -185,215 +184,156 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 
 /*---------------------------------------------------------------------------*/
 
-bool get_alloc_type(const uint64_t format_ext,
-                    const uint32_t format_idx,
-                    const uint64_t usage,
-                    alloc_type_t * const alloc_type)
+std::optional<alloc_type_t> get_alloc_type(const internal_format_t format, const uint64_t usage)
 {
-	alloc_type->primary_type = AllocBaseType::UNCOMPRESSED;
-	alloc_type->is_multi_plane = formats[format_idx].npln > 1;
-	alloc_type->is_tiled = false;
-	alloc_type->is_padded = false;
-	alloc_type->is_frontbuffer_safe = false;
+	const format_info_t *format_info = format.get_base_info();
+	if (format_info == nullptr)
+	{
+		return std::nullopt;
+	}
+
+	alloc_type_t alloc_type{};
+	alloc_type.primary_type = AllocBaseType::UNCOMPRESSED;
+	alloc_type.is_multi_plane = format_info->npln > 1;
+	alloc_type.is_tiled = false;
+	alloc_type.is_padded = false;
+	alloc_type.is_frontbuffer_safe = false;
 
 	/* Determine AFBC type for this format. This is used to decide alignment.
 	   Split block does not affect alignment, and therefore doesn't affect the allocation type. */
-	if (is_format_afbc(format_ext))
+	if (format.is_afbc())
 	{
 		/* YUV transform shall not be enabled for a YUV format */
-		if ((formats[format_idx].is_yuv == true) && (format_ext & MALI_GRALLOC_INTFMT_AFBC_YUV_TRANSFORM))
+		if (format_info->is_yuv && format.get_afbc_yuv_transform())
 		{
-			MALI_GRALLOC_LOGW("YUV Transform is incorrectly enabled for format = 0x%x. Extended internal format = 0x%" PRIx64 "\n",
-			       formats[format_idx].id, format_ext);
+			MALI_GRALLOC_LOG(WARNING) << std::showbase
+			  << "YUV Transform is incorrectly enabled for format = " << std::hex << format_info->id
+			  << ". Extended internal format = " << format;
 		}
 
 		/* Determine primary AFBC (superblock) type. */
-		alloc_type->primary_type = AllocBaseType::AFBC;
-		if (format_ext & MALI_GRALLOC_INTFMT_AFBC_WIDEBLK)
+		alloc_type.primary_type = AllocBaseType::AFBC;
+		if (format.get_afbc_32x8())
 		{
-			alloc_type->primary_type = AllocBaseType::AFBC_WIDEBLK;
+			alloc_type.primary_type = AllocBaseType::AFBC_WIDEBLK;
 		}
-		else if (format_ext & MALI_GRALLOC_INTFMT_AFBC_EXTRAWIDEBLK)
+		else if (format.get_afbc_64x4())
 		{
-			alloc_type->primary_type = AllocBaseType::AFBC_EXTRAWIDEBLK;
+			alloc_type.primary_type = AllocBaseType::AFBC_EXTRAWIDEBLK;
 		}
 
-		if (format_ext & MALI_GRALLOC_INTFMT_AFBC_TILED_HEADERS)
+		if (format.get_afbc_tiled_headers())
 		{
-			alloc_type->is_tiled = true;
+			alloc_type.is_tiled = true;
 
-			if (formats[format_idx].npln > 1 &&
-				(format_ext & MALI_GRALLOC_INTFMT_AFBC_EXTRAWIDEBLK) == 0)
+			if (format_info->npln > 1 && !format.get_afbc_64x4())
 			{
 				MALI_GRALLOC_LOGW("Extra-wide AFBC must be signalled for multi-plane formats. "
-				      "Falling back to single plane AFBC.");
-				alloc_type->is_multi_plane = false;
+				                  "Falling back to single plane AFBC.");
+				alloc_type.is_multi_plane = false;
 			}
 
-			if (format_ext & MALI_GRALLOC_INTFMT_AFBC_DOUBLE_BODY)
+			if (format.get_afbc_double_body())
 			{
-				alloc_type->is_frontbuffer_safe = true;
+				alloc_type.is_frontbuffer_safe = true;
 			}
 		}
 		else
 		{
-			if (formats[format_idx].npln > 1)
+			if (format_info->npln > 1)
 			{
 				MALI_GRALLOC_LOGW("Multi-plane AFBC is not supported without tiling. "
-				      "Falling back to single plane AFBC.");
+				                  "Falling back to single plane AFBC.");
 			}
-			alloc_type->is_multi_plane = false;
+			alloc_type.is_multi_plane = false;
 		}
 
-		if (format_ext & MALI_GRALLOC_INTFMT_AFBC_EXTRAWIDEBLK &&
-			!alloc_type->is_tiled)
+		if (format.get_afbc_64x4() && !alloc_type.is_tiled)
 		{
 			/* Headers must be tiled for extra-wide. */
 			MALI_GRALLOC_LOGE("ERROR: Invalid to specify extra-wide block without tiled headers.");
-			return false;
+			return std::nullopt;
 		}
 
-		if (alloc_type->is_frontbuffer_safe &&
-		    (format_ext & (MALI_GRALLOC_INTFMT_AFBC_WIDEBLK | MALI_GRALLOC_INTFMT_AFBC_EXTRAWIDEBLK)))
+		if (alloc_type.is_frontbuffer_safe &&
+		    (format.get_afbc_32x8() || format.get_afbc_64x4()))
 		{
 			MALI_GRALLOC_LOGE("ERROR: Front-buffer safe not supported with wide/extra-wide block.");
 		}
 
-		if (formats[format_idx].npln == 1 &&
-		    format_ext & MALI_GRALLOC_INTFMT_AFBC_WIDEBLK &&
-		    format_ext & MALI_GRALLOC_INTFMT_AFBC_EXTRAWIDEBLK)
+		if (format_info->npln == 1 &&
+		    format.get_afbc_32x8() && format.get_afbc_64x4())
 		{
 			/* "Wide + Extra-wide" implicitly means "multi-plane". */
 			MALI_GRALLOC_LOGE("ERROR: Invalid to specify multiplane AFBC with single plane format.");
-			return false;
+			return std::nullopt;
 		}
 
 		if (usage & MALI_GRALLOC_USAGE_AFBC_PADDING)
 		{
-			alloc_type->is_padded = true;
+			alloc_type.is_padded = true;
 		}
 	}
-	else if (is_format_afrc(format_ext))
+	else if (format.is_afrc())
 	{
-		const format_info_t &format = formats[format_idx];
+		alloc_type.primary_type = AllocBaseType::AFRC;
 
-		alloc_type->primary_type = AllocBaseType::AFRC;
-
-		if (format_ext & MALI_GRALLOC_INTFMT_AFRC_ROT_LAYOUT)
+		if (format.get_afrc_rot_layout())
 		{
-			alloc_type->afrc.paging_tile_width = 8;
-			alloc_type->afrc.paging_tile_height = 8;
+			alloc_type.afrc.paging_tile_width = 8;
+			alloc_type.afrc.paging_tile_height = 8;
 		}
 		else
 		{
-			alloc_type->afrc.paging_tile_width = 16;
-			alloc_type->afrc.paging_tile_height = 4;
+			alloc_type.afrc.paging_tile_width = 16;
+			alloc_type.afrc.paging_tile_height = 4;
 		}
 
-		alloc_type->afrc.rgba_luma_coding_unit_bytes = MALI_GRALLOC_INTFMT_AFRC_CODING_UNIT_BYTES_UNWRAP(
-		    (format_ext >> MALI_GRALLOC_INTFMT_AFRC_RGBA_CODING_UNIT_BYTES_SHIFT) &
-		    MALI_GRALLOC_INTFMT_AFRC_CODING_UNIT_BYTES_MASK);
-		alloc_type->afrc.rgba_luma_plane_alignment = afrc_plane_alignment_requirement(
-		    alloc_type->afrc.rgba_luma_coding_unit_bytes);
-		if (alloc_type->afrc.rgba_luma_plane_alignment == 0)
+		alloc_type.afrc.rgba_luma_coding_unit_bytes = to_bytes(format.get_afrc_rgba_coding_size());
+		alloc_type.afrc.rgba_luma_plane_alignment = afrc_plane_alignment_requirement(
+		    alloc_type.afrc.rgba_luma_coding_unit_bytes);
+		if (alloc_type.afrc.rgba_luma_plane_alignment == 0)
 		{
-			return false;
+			return std::nullopt;
 		}
 
-		alloc_type->afrc.chroma_coding_unit_bytes = MALI_GRALLOC_INTFMT_AFRC_CODING_UNIT_BYTES_UNWRAP(
-		    (format_ext >> MALI_GRALLOC_INTFMT_AFRC_CHROMA_CODING_UNIT_BYTES_SHIFT) &
-		    MALI_GRALLOC_INTFMT_AFRC_CODING_UNIT_BYTES_MASK);
-		alloc_type->afrc.chroma_plane_alignment = afrc_plane_alignment_requirement(
-		    alloc_type->afrc.chroma_coding_unit_bytes);
-		if (alloc_type->afrc.chroma_plane_alignment == 0)
+		alloc_type.afrc.chroma_coding_unit_bytes = to_bytes(format.get_afrc_chroma_coding_size());
+		alloc_type.afrc.chroma_plane_alignment = afrc_plane_alignment_requirement(
+		    alloc_type.afrc.chroma_coding_unit_bytes);
+		if (alloc_type.afrc.chroma_plane_alignment == 0)
 		{
-			return false;
+			return std::nullopt;
 		}
 
-		for (auto plane = 0; plane < format.npln; ++plane)
+		for (auto plane = 0; plane < format_info->npln; ++plane)
 		{
-			switch (format.ncmp[plane])
+			switch (format_info->ncmp[plane])
 			{
 			case 1:
-				alloc_type->afrc.clump_width[plane] = alloc_type->afrc.paging_tile_width;
-				alloc_type->afrc.clump_height[plane] = alloc_type->afrc.paging_tile_height;
+				alloc_type.afrc.clump_width[plane] = alloc_type.afrc.paging_tile_width;
+				alloc_type.afrc.clump_height[plane] = alloc_type.afrc.paging_tile_height;
 				break;
 			case 2:
-				alloc_type->afrc.clump_width[plane] = 8;
-				alloc_type->afrc.clump_height[plane] = 4;
+				alloc_type.afrc.clump_width[plane] = 8;
+				alloc_type.afrc.clump_height[plane] = 4;
 				break;
 			case 3:
 			case 4:
-				alloc_type->afrc.clump_width[plane] = 4;
-				alloc_type->afrc.clump_height[plane] = 4;
+				alloc_type.afrc.clump_width[plane] = 4;
+				alloc_type.afrc.clump_height[plane] = 4;
 				break;
 			default:
 				MALI_GRALLOC_LOGE("internal error: invalid number of components in plane %d (%d)",
-				                  static_cast<int>(plane), static_cast<int>(format.ncmp[plane]));
-				return false;
+				                  static_cast<int>(plane), static_cast<int>(format_info->ncmp[plane]));
+				return std::nullopt;
 			}
 		}
 	}
-	else if (is_format_block_linear(format_ext))
+	else if (format.is_block_linear())
 	{
-		alloc_type->primary_type = AllocBaseType::BLOCK_LINEAR;
+		alloc_type.primary_type = AllocBaseType::BLOCK_LINEAR;
 	}
-	return true;
-}
-
-/*
- * Initialise AFBC header based on superblock layout.
- * Width and height should already be AFBC aligned.
- */
-void init_afbc(uint8_t *buf, const uint64_t alloc_format,
-               const bool is_multi_plane,
-               const int w, const int h)
-{
-	const bool is_tiled = ((alloc_format & MALI_GRALLOC_INTFMT_AFBC_TILED_HEADERS)
-	                         == MALI_GRALLOC_INTFMT_AFBC_TILED_HEADERS);
-	const uint32_t n_headers = (w * h) / AFBC_PIXELS_PER_BLOCK;
-	int body_offset = n_headers * AFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY;
-
-	afbc_buffer_align(is_tiled, &body_offset);
-
-	/*
-	 * Declare the AFBC header initialisation values for each superblock layout.
-	 * Tiled headers (AFBC 1.2) can be initialised to zero for non-subsampled formats
-	 * (SB layouts: 0, 3, 4, 7).
-	 */
-	uint32_t headers[][4] = {
-		{ (uint32_t)body_offset, 0x1, 0x10000, 0x0 }, /* Layouts 0, 3, 4, 7 */
-		{ ((uint32_t)body_offset + (1 << 28)), 0x80200040, 0x1004000, 0x20080 } /* Layouts 1, 5 */
-	};
-	if ((alloc_format & MALI_GRALLOC_INTFMT_AFBC_TILED_HEADERS))
-	{
-		/* Zero out body_offset for non-subsampled formats. */
-		memset(headers[0], 0, sizeof(uint32_t) * 4);
-	}
-
-	/* Map base format to AFBC header layout */
-	const uint32_t base_format = alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK;
-
-	/* Sub-sampled formats use layouts 1 and 5 which is index 1 in the headers array.
-	 * 1 = 4:2:0 16x16, 5 = 4:2:0 32x8.
-	 *
-	 * Non-subsampled use layouts 0, 3, 4 and 7, which is index 0.
-	 * 0 = 16x16, 3 = 32x8 + split, 4 = 32x8, 7 = 64x4.
-	 *
-	 * When using separated planes for YUV formats, the header layout is the non-subsampled one
-	 * as there is a header per-plane and there is no sub-sampling within the plane.
-	 * Separated plane only supports 32x8 or 64x4 for the luma plane, so the first plane must be 4 or 7.
-	 * Seperated plane only supports 64x4 for subsequent planes, so these must be header layout 7.
-	 */
-	const uint32_t layout = is_subsampled_yuv(base_format) && !is_multi_plane ? 1 : 0;
-
-	MALI_GRALLOC_LOGV("Writing AFBC header layout %d for format %" PRIx32, layout, base_format);
-
-	for (uint32_t i = 0; i < n_headers; i++)
-	{
-		memcpy(buf, headers[layout], sizeof(headers[layout]));
-		buf += sizeof(headers[layout]);
-	}
+	return alloc_type;
 }
 
 static int max(int a, int b)
@@ -579,7 +519,7 @@ static void update_yv12_stride(int8_t plane,
 		 */
 		*byte_stride = luma_stride / 2;
 		assert(*byte_stride == GRALLOC_ALIGN(*byte_stride, stride_align));
-		assert(*byte_stride & 15 == 0);
+		assert((*byte_stride & 15) == 0);
 	}
 }
 
@@ -620,7 +560,7 @@ static void calc_allocation_size(const int width,
 				 const uint64_t usage_flag_for_stride_alignment,
                                  int * const pixel_stride,
                                  size_t * const size,
-                                 plane_info_t plane_info[MAX_PLANES])
+                                 plane_layout &plane_info)
 {
 	plane_info[0].offset = 0;
 
@@ -650,7 +590,13 @@ static void calc_allocation_size(const int width,
 			uint32_t paging_tile_stride =
 			    plane_info[plane].alloc_width / alloc_type.afrc.clump_width[plane] / alloc_type.afrc.paging_tile_width;
 			const uint32_t coding_units_in_paging_tile = 64;
-			plane_info[plane].byte_stride = paging_tile_stride * coding_units_in_paging_tile * coding_unit_bytes;
+			const uint32_t paging_tile_byte_stride =
+			    paging_tile_stride * coding_units_in_paging_tile * coding_unit_bytes;
+			const uint32_t paging_tile_sample_height =
+			    alloc_type.afrc.paging_tile_height * alloc_type.afrc.clump_height[plane];
+
+			assert(paging_tile_byte_stride % paging_tile_sample_height == 0);
+			plane_info[plane].byte_stride = paging_tile_byte_stride / paging_tile_sample_height;
 		}
 		else if (alloc_type.is_afbc())
 		{
@@ -667,11 +613,13 @@ static void calc_allocation_size(const int width,
 				sample_height /= format.vsub;
 				sample_width /= format.hsub;
 			}
-			uint32_t bytes_per_block = sample_height * sample_width * format.bpp[plane] / 8;
-			uint32_t number_of_x_blocks = plane_info[0].alloc_width / 16;
 
-			/* stride becomes equal to a row of blocks */
-			plane_info[plane].byte_stride = number_of_x_blocks * bytes_per_block;
+			uint32_t bytes_per_block = sample_height * sample_width * format.bpp[plane] / 8;
+			assert(bytes_per_block % sample_height == 0);
+			uint32_t number_of_x_blocks = plane_info[0].alloc_width / 16;
+			assert(number_of_x_blocks > 0);
+			uint32_t block_stride = number_of_x_blocks * bytes_per_block;
+			plane_info[plane].byte_stride = block_stride / sample_height;
 		}
 		else
 		{
@@ -877,8 +825,15 @@ static void calc_allocation_size(const int width,
 		}
 		else if (alloc_type.is_block_linear())
 		{
+			uint32_t block_height = 16;
+			if (plane > 0)
+			{
+				block_height /= format.vsub;
+			}
+
+			uint32_t block_size = plane_info[plane].byte_stride * block_height;
 			uint32_t number_of_blocks_y = plane_info[0].alloc_height / 16;
-			body_size = plane_info[plane].byte_stride * number_of_blocks_y;
+			body_size = block_size * number_of_blocks_y;
 		}
 		else
 		{
@@ -990,7 +945,6 @@ static bool validate_format(const format_info_t * const format,
 
 int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 {
-	alloc_type_t alloc_type{};
 	int err;
 
 	int alloc_width = descriptor->width;
@@ -1018,30 +972,30 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 		return -EINVAL;
 	}
 
-	if (bufDescriptor->alloc_format == MALI_GRALLOC_FORMAT_INTERNAL_UNDEFINED)
+	if (descriptor->alloc_format.is_undefined())
 	{
 		MALI_GRALLOC_LOGE("ERROR: Unrecognized and/or unsupported format 0x%" PRIx64 " and usage 0x%" PRIx64,
 		       descriptor->hal_format, usage);
 		return -EINVAL;
 	}
 
-	int32_t format_idx = get_format_index(descriptor->alloc_format & MALI_GRALLOC_INTFMT_FMT_MASK);
-	if (format_idx == -1)
+	const auto *format_info = descriptor->alloc_format.get_base_info();
+	if (format_info == nullptr)
 	{
 		return -EINVAL;
 	}
-	MALI_GRALLOC_LOGV("alloc_format: 0x%" PRIx64 " format_idx: %d", descriptor->alloc_format, format_idx);
+	MALI_GRALLOC_LOG(VERBOSE) << "alloc_format: " << descriptor->alloc_format;
 
 	/*
 	 * Obtain allocation type (uncompressed, AFBC basic, etc...)
 	 */
-	if (!get_alloc_type(descriptor->alloc_format & MALI_GRALLOC_INTFMT_EXT_MASK,
-	    format_idx, usage, &alloc_type))
+	auto alloc_type = get_alloc_type(descriptor->alloc_format, usage);
+	if (!alloc_type.has_value())
 	{
 		return -EINVAL;
 	}
 
-	if (!validate_format(&formats[format_idx], alloc_type, descriptor))
+	if (!validate_format(format_info, *alloc_type, descriptor))
 	{
 		return -EINVAL;
 	}
@@ -1052,23 +1006,20 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 	 * If using AFBC, further adjustments to the allocation width and height will be made later
 	 * based on AFBC alignment requirements and, for YUV, the plane properties.
 	 */
-	mali_gralloc_adjust_dimensions(descriptor->alloc_format,
-	                               usage,
-	                               &alloc_width,
-	                               &alloc_height);
+	mali_gralloc_adjust_dimensions(descriptor->alloc_format, usage, &alloc_width, &alloc_height);
 
 	/* Obtain buffer size and plane information. */
 	calc_allocation_size(alloc_width,
 	                     alloc_height,
-	                     alloc_type,
-	                     formats[format_idx],
+	                     *alloc_type,
+	                     *format_info,
 	                     usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK), // 'has_cpu_usage'
 	                     usage & ~(GRALLOC_USAGE_PRIVATE_MASK | GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK), // 'has_hw_usage'
 			     usage & RK_GRALLOC_USAGE_SPECIFY_STRIDE, // 'is_stride_specified'
 			     get_usage_flag_for_stride_alignment(usage),
-	                     &bufDescriptor->pixel_stride,
-	                     &bufDescriptor->size,
-	                     bufDescriptor->plane_info);
+	                     &descriptor->pixel_stride,
+	                     &descriptor->size,
+	                     descriptor->plane_info);
 
 	/*-------------------------------------------------------*/
 	/* <为满足 implicit_requirement_for_rk_gralloc_alloc_interface_from_rk_video_decoder 的特殊处理.> */
@@ -1132,9 +1083,9 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 	 */
 	if (descriptor->layer_count > 1)
 	{
-		if (is_format_afbc(descriptor->alloc_format))
+		if (descriptor->alloc_format.is_afbc())
 		{
-			if (descriptor->alloc_format & MALI_GRALLOC_INTFMT_AFBC_TILED_HEADERS)
+			if (descriptor->alloc_format.get_afbc_tiled_headers())
 			{
 				descriptor->size = GRALLOC_ALIGN(descriptor->size, 4096);
 			}

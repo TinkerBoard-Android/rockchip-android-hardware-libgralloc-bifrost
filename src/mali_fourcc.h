@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2020 ARM Limited. All rights reserved.
+ * Copyright (C) 2019-2021 ARM Limited. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -137,6 +137,11 @@ extern "C"
 
 #endif /* DRM_FORMAT_MOD_ARM_AFBC */
 
+/* AFBC solid color blocks */
+#ifndef AFBC_FORMAT_MOD_SC
+#define AFBC_FORMAT_MOD_SC (((uint64_t)1) << 9)
+#endif
+
 /* AFBC 1.3 block sizes. */
 #ifndef AFBC_FORMAT_MOD_BLOCK_SIZE_64x4
 #define AFBC_FORMAT_MOD_BLOCK_SIZE_64x4      ((uint64_t)0x3)
@@ -192,9 +197,9 @@ extern "C"
  * encoded buffer. The coding unit size for chrominance is the same for both
  * Cb and Cr, which may be stored in separate planes.
  *
- * For RGBA formats, AFRC_FORMAT_MOD_RGBA_CU_SIZE must be specified.
- * For YUV formats, both AFRC_FORMAT_MOD_LUMA_CU_SIZE and
- * AFRC_FORMAT_MOD_CHROMA_CU_SIZE must be specified.
+ * For RGBA formats, AFRC_FORMAT_MOD_CU_SIZE_P0 must be specified.
+ * For YUV formats, both AFRC_FORMAT_MOD_CU_SIZE_P0 and
+ * AFRC_FORMAT_MOD_CU_SIZE_P12 must be specified.
  */
 #ifndef AFRC_FORMAT_MOD_CU_SIZE_MASK
 #define AFRC_FORMAT_MOD_CU_SIZE_MASK 0xf
@@ -212,16 +217,12 @@ extern "C"
 #define AFRC_FORMAT_MOD_CU_SIZE_32 (3ULL)
 #endif
 
-#ifndef AFRC_FORMAT_MOD_RGBA_CU_SIZE
-#define AFRC_FORMAT_MOD_RGBA_CU_SIZE(__afrc_cu_size) (__afrc_cu_size)
+#ifndef AFRC_FORMAT_MOD_CU_SIZE_P0
+#define AFRC_FORMAT_MOD_CU_SIZE_P0(__afrc_cu_size) (__afrc_cu_size)
 #endif
 
-#ifndef AFRC_FORMAT_MOD_LUMA_CU_SIZE
-#define AFRC_FORMAT_MOD_LUMA_CU_SIZE(__afrc_cu_size) (__afrc_cu_size)
-#endif
-
-#ifndef AFRC_FORMAT_MOD_CHROMA_CU_SIZE
-#define AFRC_FORMAT_MOD_CHROMA_CU_SIZE(__afrc_cu_size) ((__afrc_cu_size) << 4)
+#ifndef AFRC_FORMAT_MOD_CU_SIZE_P12
+#define AFRC_FORMAT_MOD_CU_SIZE_P12(__afrc_cu_size) ((__afrc_cu_size) << 4)
 #endif
 
 }
