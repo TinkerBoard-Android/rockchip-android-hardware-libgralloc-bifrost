@@ -786,7 +786,6 @@ static void calc_allocation_size(const int width,
 
 			/* 按需对 nv12 以外的 rk_video 使用的格式调整 byte_stride. */
 			if ( usage_flag_for_stride_alignment != 0
-				&& is_base_format_used_by_rk_video(format.id)
 				&& MALI_GRALLOC_FORMAT_INTERNAL_NV12 != format.id )
 			{
 				uint32_t byte_stride = plane_info[plane].byte_stride;
