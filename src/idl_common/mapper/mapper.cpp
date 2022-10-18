@@ -505,6 +505,13 @@ static const hidl_vec<IMapper::MetadataTypeDescription> descriptions = {
 #endif
 	/* Arm vendor metadata */
 	{ ArmMetadataType_PLANE_FDS, "Vector of file descriptors of each plane", true, false },
+	/* RK vendor metadata */
+	{
+		RkMetadataType_OFFSET_OF_DYNAMIC_HDR_METADATA,
+		"offset of dynamic_hdr_metadata in the dmabuf",
+		true,
+		true,
+	},
 };
 
 static bool is_mutable(const IMapper::MetadataType &type)

@@ -336,9 +336,34 @@ static android::status_t encodeArmPlaneFds(const std::vector<int64_t> &fds, hidl
 	return android::OK;
 }
 
+static android::status_t encodeRkOffsetOfVideoMetadata(const int64_t offset, hidl_vec<uint8_t>* output)
+{
+	output->resize(1 * sizeof(int64_t));
+
+	memcpy(output->data(), &offset, sizeof(offset));
+
+	return android::OK;
+}
+
+static android::status_t decodeRkOffsetOfVideoMetadata(const hidl_vec<uint8_t>& input, int64_t* offset_of_metadata)
+{
+	int64_t offset = 0;
+
+	memcpy(&offset, input.data(), sizeof(offset));
+
+	*offset_of_metadata = offset;
+
+	return android::NO_ERROR;
+}
+
 static bool isArmMetadataType(const MetadataType &metadataType)
 {
 	return metadataType.name == GRALLOC_ARM_METADATA_TYPE_NAME;
+}
+
+static bool isRkMetadataType(const MetadataType& metadataType)
+{
+	return metadataType.name == GRALLOC_RK_METADATA_TYPE_NAME;
 }
 
 static ArmMetadataType getArmMetadataTypeValue(const MetadataType &metadataType)
@@ -628,6 +653,35 @@ void get_metadata(const private_handle_t *handle, const IMapper::MetadataType &m
 		}
 		hidl_cb((err) ? Error::UNSUPPORTED : Error::NONE, vec);
 	}
+	else if (isRkMetadataType(metadataType))
+	{
+		android::status_t err = android::OK;
+
+		switch (metadataType.value)
+		{
+		case OFFSET_OF_DYNAMIC_HDR_METADATA:
+		{
+			auto import = handle_cast<imported_handle>(handle);
+			int64_t offset = 0;
+
+			get_offset_of_dynamic_hdr_metadata(import, &offset);
+			if ( offset > 0 )
+			{
+				err = encodeRkOffsetOfVideoMetadata(offset, &vec);
+			}
+			else
+			{
+				err = android::BAD_VALUE;
+			}
+
+			break;
+		}
+		default:
+			err = android::BAD_VALUE;
+		}
+		hidl_cb((err) ? Error::UNSUPPORTED : Error::NONE, vec);
+
+	}
 	else
 	{
 		/* If known vendor type, return it */
@@ -784,6 +838,37 @@ Error set_metadata(const imported_handle *handle, const IMapper::MetadataType &m
 		case StandardMetadataType::COMPRESSION:
 		case StandardMetadataType::INTERLACED:
 		case StandardMetadataType::INVALID:
+		default:
+			return Error::UNSUPPORTED;
+		}
+		return ((err) ? Error::UNSUPPORTED : Error::NONE);
+	}
+	else if (isRkMetadataType(metadataType))
+	{
+		android::status_t err = android::OK;
+
+		switch (metadataType.value)
+		{
+		case OFFSET_OF_DYNAMIC_HDR_METADATA:
+		{
+			int64_t offset = 0;
+
+			err = decodeRkOffsetOfVideoMetadata(metadata, &offset);
+			if ( !err )
+			{
+				if (offset < 0)
+				{
+					MALI_GRALLOC_LOGE("invalid 'offset': %" PRId64, offset);
+					return Error::BAD_VALUE;
+				}
+				else
+				{
+					set_offset_of_dynamic_hdr_metadata(handle, offset);
+				}
+			}
+
+			break;
+		}
 		default:
 			return Error::UNSUPPORTED;
 		}

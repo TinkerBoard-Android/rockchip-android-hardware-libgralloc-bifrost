@@ -115,6 +115,7 @@ struct shared_metadata
 	aligned_inline_vector<uint8_t, smpte2094_40_size> smpte2094_40{};
 	aligned_inline_vector<uint8_t, smpte2094_10_size> smpte2094_10{};
 	aligned_inline_vector<char, 256> name{};
+	aligned_optional<int64_t> offset_of_dynamic_hdr_metadata{};
 
 	shared_metadata() = default;
 
@@ -157,8 +158,11 @@ static_assert(sizeof(shared_metadata::smpte2094_10) == 4836, "bad size");
 static_assert(offsetof(shared_metadata, name) == 6216, "bad alignment");
 static_assert(sizeof(shared_metadata::name) == 260, "bad size");
 
+static_assert(offsetof(shared_metadata, offset_of_dynamic_hdr_metadata) == 6480, "bad alignment"); // 6480: 6216 + 260, 再 8 对齐
+static_assert(sizeof(shared_metadata::offset_of_dynamic_hdr_metadata) == 16, "bad size"); // 模仿 chroma_siting
+
 static_assert(alignof(shared_metadata) == 8, "bad alignment");
-static_assert(sizeof(shared_metadata) == 6480, "bad size");
+static_assert(sizeof(shared_metadata) == 6496, "bad size"); // "6496": 6480 + 16, 已经 8 对齐. 
 
 void shared_metadata_init(void *memory, std::string_view name, Dataspace dataspace, const ExtendableType &chroma_siting)
 {
@@ -242,6 +246,30 @@ void set_chroma_siting(const imported_handle *hnd, const ExtendableType &chroma_
 	auto *metadata = reinterpret_cast<shared_metadata *>(hnd->attr_base);
 	metadata->chroma_siting = aligned_optional(chroma_siting.value);
 }
+
+void get_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, int64_t* offset)
+{
+	auto *metadata = reinterpret_cast<const shared_metadata *>(hnd->attr_base);
+	auto stored_value = metadata->offset_of_dynamic_hdr_metadata.to_std_optional();
+
+	if (stored_value.has_value())
+	{
+		int64_t value = stored_value.value();
+		*offset = value;
+	}
+	else
+	{
+		MALI_GRALLOC_LOGE("offset_of_dynamic_hdr_metadata has not been set yet");
+		*offset = -1;
+	}
+}
+
+void set_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, const int64_t offset)
+{
+	auto *metadata = reinterpret_cast<shared_metadata *>(hnd->attr_base);
+	metadata->offset_of_dynamic_hdr_metadata = aligned_optional(offset);
+}
+
 
 void get_blend_mode(const imported_handle *hnd, std::optional<BlendMode> *blend_mode)
 {

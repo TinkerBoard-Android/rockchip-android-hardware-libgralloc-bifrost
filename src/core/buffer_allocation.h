@@ -178,3 +178,8 @@ static inline bool is_height_alignment_specified(uint64_t usage)
 {
 	return (get_usage_flag_for_height_alignment(usage) != 0);
 }
+
+static inline bool has_dynamic_hdr(uint64_t usage)
+{
+	return ( (usage & RK_GRALLOC_USAGE_DOLBY_VISION) != 0 );
+}

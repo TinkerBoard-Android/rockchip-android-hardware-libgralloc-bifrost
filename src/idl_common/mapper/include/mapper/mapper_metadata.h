@@ -48,6 +48,11 @@ const static IMapper::MetadataType ArmMetadataType_PLANE_FDS{
 	GRALLOC_ARM_METADATA_TYPE_NAME, static_cast<int64_t>(aidl::arm::graphics::ArmMetadataType::PLANE_FDS)
 };
 
+#define OFFSET_OF_DYNAMIC_HDR_METADATA	(1)
+#define GRALLOC_RK_METADATA_TYPE_NAME "rk.graphics.RkMetadataType"
+const static IMapper::MetadataType RkMetadataType_OFFSET_OF_DYNAMIC_HDR_METADATA{ GRALLOC_RK_METADATA_TYPE_NAME,
+										  OFFSET_OF_DYNAMIC_HDR_METADATA };
+
 /**
  * Retrieves a Buffer's metadata value.
  *

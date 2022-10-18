@@ -61,6 +61,9 @@ void set_dataspace(const imported_handle *hnd, const Dataspace &dataspace);
 void get_chroma_siting(const imported_handle *hnd, std::optional<ExtendableType> *chroma_siting);
 void set_chroma_siting(const imported_handle *hnd, const ExtendableType &chroma_siting);
 
+void get_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, int64_t* offset);
+void set_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, const int64_t offset);
+
 void get_blend_mode(const imported_handle *hnd, std::optional<BlendMode> *blend_mode);
 void set_blend_mode(const imported_handle *hnd, const BlendMode &blend_mode);
 

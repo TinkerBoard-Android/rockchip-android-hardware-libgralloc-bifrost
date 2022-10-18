@@ -181,6 +181,14 @@ static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor
 	}
 }
 
+static void enlarge_rk_video_buffer_size_for_dynamic_hdr_metadata(buffer_descriptor_t* const bufDescriptor)
+{
+	const uint32_t size_of_metadata_buf = PAGE_SIZE;
+
+	D("to enlarge size of rk_video_buffer by size_of_metadata_buf(%u)", size_of_metadata_buf);
+	bufDescriptor->size += size_of_metadata_buf;
+}
+
 /*---------------------------------------------------------------------------*/
 
 std::optional<alloc_type_t> get_alloc_type(const internal_format_t format, const uint64_t usage)
@@ -1117,7 +1125,13 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 			{
 				adjust_rk_video_buffer_size(bufDescriptor, format_info);
 			}
+
+			if ( is_base_format_used_by_rk_video(base_format) && has_dynamic_hdr(usage) )
+			{
+				enlarge_rk_video_buffer_size_for_dynamic_hdr_metadata(bufDescriptor);
+			}
 		}
+
 		/*-------------------------------------------------------*/
 
 		/*

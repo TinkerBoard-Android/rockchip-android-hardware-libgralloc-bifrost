@@ -78,6 +78,9 @@
 /* 64 对齐. */
 #define RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64 (GRALLOC_USAGE_PRIVATE_4 | GRALLOC_USAGE_PRIVATE_5)
 
+/* 表征当前 buffer 使用 Dolby Vision. */
+#define RK_GRALLOC_USAGE_DOLBY_VISION (GRALLOC_USAGE_PRIVATE_6)
+
 typedef enum
 {
 	/* 表征 client 要求 buffer (的 plane_0) 的 byte_stride 是 16 对齐.
