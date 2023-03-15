@@ -1022,6 +1022,30 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 		return -EINVAL;
 	}
 
+	rk_board_platform_t platform = get_rk_board_platform();
+	if (platform == RK356X || platform == RK3326)
+	{
+		/*
+		 * On android.hardware.nativehardware.cts
+		 *		glCheckFramebuffer will return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+		 *		relative func on mali so is gles_surface_pixel_format_is_depth_renderable
+		 * Also, deqp dEQP-VK.api.external.memory.android_hardware_buffer.image_formats *
+		 *		on VkAndroidHardwareBufferFormatPropertiesANDROID
+		 *		TCU_CHECK(formatProperties.format == format) failed
+		 */
+
+		if (format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_16 ||
+			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_24 ||
+			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_24_STENCIL_8 ||
+			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_32F ||
+			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_32F_STENCIL_8 ||
+			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_STENCIL_8)
+		{
+			ALOGE("rk-debug RK356x/RK3326 can not support DEPTH & STENCIL format");
+			return -EINVAL;
+		}
+	}
+
 	if (!validate_format(format_info, *alloc_type, descriptor))
 	{
 		return -EINVAL;

@@ -1323,17 +1323,9 @@ static internal_format_t select_best_format(const buffer_descriptor_t &descripto
 	return alloc_format;
 }
 
-typedef enum rk_board_platform_t
-{
-	RK3326,
-	RK356X,
-	RK3588,
-	RK_BOARD_PLATFORM_UNKNOWN,
-} rk_board_platform_t;
-
 static rk_board_platform_t s_platform = RK_BOARD_PLATFORM_UNKNOWN;
 
-static rk_board_platform_t get_rk_board_platform()
+rk_board_platform_t get_rk_board_platform()
 {
 	/* 若 's_platform' 尚未初始化, 则... */
 	if ( RK_BOARD_PLATFORM_UNKNOWN == s_platform )
@@ -1703,11 +1695,16 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
                                                 && internal_format != MALI_GRALLOC_FORMAT_INTERNAL_BGR_888
                                                 && internal_format != MALI_GRALLOC_FORMAT_INTERNAL_YV12
                                                 && internal_format != HAL_PIXEL_FORMAT_DEPTH_32F
+                                                && internal_format != HAL_PIXEL_FORMAT_DEPTH_16
+                                                && internal_format != HAL_PIXEL_FORMAT_DEPTH_24
+                                                && internal_format != HAL_PIXEL_FORMAT_DEPTH_32F_STENCIL_8
+                                                && internal_format != HAL_PIXEL_FORMAT_STENCIL_8
+                                                && internal_format != HAL_PIXEL_FORMAT_DEPTH_24_STENCIL_8
                                                 && should_sf_client_layer_use_afbc_format_by_size(internal_format,
                                                                                                   buffer_size) )
                                         {
                                                 D("use_afbc_layer: force to use AFBC");
-						modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
+                                                modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
                                         }
                                 }
                         }

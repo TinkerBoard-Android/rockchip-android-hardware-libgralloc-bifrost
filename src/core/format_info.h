@@ -41,8 +41,15 @@ typedef struct
 	uint16_t height;
 } rect_t;
 
-/* clang-format: off */
-/**
+typedef enum rk_board_platform_t
+{
+    RK3326,
+    RK356X,
+    RK3588,
+    RK_BOARD_PLATFORM_UNKNOWN,
+} rk_board_platform_t;
+
+/*
  * Pixel format information.
  *
  * These properties are used by gralloc for buffer allocation.
@@ -124,3 +131,5 @@ void get_format_dataspace(const format_info_t *info,
                           int width,
                           int height,
                           android_dataspace_t *dataspace);
+
+rk_board_platform_t get_rk_board_platform();
