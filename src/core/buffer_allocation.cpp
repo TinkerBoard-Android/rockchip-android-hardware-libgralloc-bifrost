@@ -1023,7 +1023,7 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 	}
 
 	rk_board_platform_t platform = get_rk_board_platform();
-	if (platform == RK356X || platform == RK3326)
+	if (platform == RK356X || platform == RK3326 || platform == RK3588)
 	{
 		/*
 		 * On android.hardware.nativehardware.cts
@@ -1041,7 +1041,7 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_DEPTH_32F_STENCIL_8 ||
 			format_info->id == MALI_GRALLOC_FORMAT_INTERNAL_STENCIL_8)
 		{
-			ALOGE("rk-debug RK356x/RK3326 can not support DEPTH & STENCIL format");
+			ALOGE("rk-debug RK356x/RK3326/RK3588 not support DEPTH & STENCIL format");
 			return -EINVAL;
 		}
 	}
