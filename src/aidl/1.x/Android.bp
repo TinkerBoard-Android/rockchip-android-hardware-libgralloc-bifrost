@@ -19,7 +19,7 @@ cc_defaults {
     name: "arm_gralloc_version_defaults",
     shared_libs: [
         "android.hardware.graphics.common@1.2",
-        "android.hardware.graphics.common-V3-ndk",
+        "android.hardware.graphics.common-V4-ndk",
     ],
     cflags: [
         "-DGRALLOC_MAPPER_VERSION_MAJOR=4",

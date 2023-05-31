@@ -19,7 +19,7 @@ cc_defaults {
     name: "arm_gralloc_uses_aidl_defaults",
     shared_libs: [
         "arm.graphics-V3-ndk",
-        "android.hardware.graphics.common-V3-ndk",
+        "android.hardware.graphics.common-V4-ndk",
     ],
     export_shared_lib_headers: ["arm.graphics-V3-ndk"],
 }
