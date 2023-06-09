@@ -382,6 +382,8 @@ Error validateBufferSize(void *buffer, const IMapper::BufferDescriptorInfo &desc
 		return Error::BAD_VALUE;
 	}
 
+	if ( handle->req_format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED )
+	{
 	/* The requested format must match. It may be possible for some formats to be compatible but there are no compelling
 	 * use cases for a more complex check.
 	 */
@@ -391,6 +393,7 @@ Error validateBufferSize(void *buffer, const IMapper::BufferDescriptorInfo &desc
 		MALI_GRALLOC_LOGE("Buffer requested format: %#x does not match descriptor format: %#x", handle->req_format,
 		                  descriptor_format);
 		return Error::BAD_VALUE;
+	}
 	}
 
 	return Error::NONE;
