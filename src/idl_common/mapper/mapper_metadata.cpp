@@ -649,7 +649,7 @@ Error set_metadata(const imported_handle *handle, const IMapper::MetadataType &m
 			err = android::gralloc4::decodeDataspace(metadata, &dataspace);
 			// The new dataspace format is above 16 bits,
 			if (((int32_t)dataspace) & 0xffff) {
-				MALI_GRALLOC_LOGW("Found legacy dataspace=0x%x, converting it to v0...", dataspace);
+				MALI_GRALLOC_LOGV("Found legacy dataspace=0x%x, converting it to v0...", dataspace);
 				switch (((int32_t)dataspace) & 0xffff) {
 					case HAL_DATASPACE_SRGB:
 						dataspace = Dataspace::SRGB;
