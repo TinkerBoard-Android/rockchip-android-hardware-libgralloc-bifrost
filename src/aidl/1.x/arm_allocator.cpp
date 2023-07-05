@@ -48,7 +48,10 @@ ndk::ScopedAStatus BifrostAllocator::allocate(const std::vector<uint8_t> &in_des
 	/* Pass ownership when returning the created handles. */
 	for (auto &handle : *result)
 	{
-		out_result->buffers.emplace_back(::android::makeToAidl(handle.release()));
+		private_handle_t* private_handle = handle.release();
+
+		out_result->buffers.emplace_back(::android::makeToAidl(private_handle));
+		native_handle_delete(private_handle);
 	}
 
 	return ndk::ScopedAStatus::ok();
