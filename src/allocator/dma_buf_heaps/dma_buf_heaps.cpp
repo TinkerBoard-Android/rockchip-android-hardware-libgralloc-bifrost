@@ -26,7 +26,9 @@
 #include "allocator/allocator.h"
 #include "core/buffer_allocation.h"
 #include "core/buffer_descriptor.h"
+#include "core/format_info.h"
 #include "usages.h"
+#include "helper_functions.h"
 
 /*---------------------------------------------------------------------------*/
 
@@ -90,6 +92,16 @@ const custom_heap custom_heaps[] =
 };
 
 /*---------------------------------------------------------------------------*/
+
+static bool is_platform_rk356x()
+{
+	return (RK356X == get_rk_board_platform() );
+}
+
+static bool is_platform_rk3588()
+{
+	return (RK3588 == get_rk_board_platform() );
+}
 
 static bool is_alloc_all_buffers_from_cma_heap_required_via_prop()
 {
@@ -166,6 +178,12 @@ static dma_buf_heap pick_dma_buf_heap(uint64_t usage)
 	if ( is_alloc_all_buffers_within_4g_required_via_prop() )
 	{
 		MALI_GRALLOC_LOGI("to allocate all buffers within 4G");
+		usage |= RK_GRALLOC_USAGE_WITHIN_4G;
+	}
+	if ( (is_platform_rk356x() || is_platform_rk3588() )
+			&& does_usage_have_flag(usage, GRALLOC_USAGE_HW_VIDEO_ENCODER) )
+	{
+		MALI_GRALLOC_LOGI("rk356x/rk3588: to allocate buffer within 4G for GRALLOC_USAGE_HW_VIDEO_ENCODER");
 		usage |= RK_GRALLOC_USAGE_WITHIN_4G;
 	}
 
