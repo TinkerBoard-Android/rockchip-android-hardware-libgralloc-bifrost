@@ -255,6 +255,10 @@ int mali_gralloc_lock(imported_handle *hnd,
 		*vaddr = hnd->base;
 		buffer_sync(hnd, get_tx_direction(usage));
 	}
+	else
+	{
+		MALI_GRALLOC_LOG(WARNING) << "No READ or WRITE bits in 'usage', lock() might return NULL as virtual addr of the buffer";
+	}
 
 	return 0;
 }
