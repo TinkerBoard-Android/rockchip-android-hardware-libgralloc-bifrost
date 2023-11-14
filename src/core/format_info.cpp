@@ -1088,7 +1088,7 @@ void get_format_dataspace(const format_info_t *format_info, uint64_t usage, int 
 			color_space = HAL_DATASPACE_STANDARD_BT2020;
 			range = HAL_DATASPACE_RANGE_FULL;
 		}
-		else if (width < yuv_bt601_max_width || height < yuv_bt601_max_height)
+		else if (width <= yuv_bt601_max_width || height <= yuv_bt601_max_height)
 		{
 			color_space = HAL_DATASPACE_STANDARD_BT601_625;
 			range = HAL_DATASPACE_RANGE_LIMITED;
