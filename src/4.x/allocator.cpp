@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
+#include <cutils/properties.h>
 #include "allocator.h"
 #include "hidl_common/descriptor.h"
 #include "hidl_common/allocator.h"
 #include "allocator/allocator.h"
+#include "usages.h"
 
 namespace arm
 {
@@ -43,10 +45,16 @@ GrallocAllocator::~GrallocAllocator()
 Return<void> GrallocAllocator::allocate(const BufferDescriptor &descriptor, uint32_t count, allocate_cb hidl_cb)
 {
 	buffer_descriptor_t bufferDescriptor;
+	char value[PROPERTY_VALUE_MAX];
 	if (!mapper::common::grallocDecodeBufferDescriptor(descriptor, bufferDescriptor))
 	{
 		hidl_cb(Error::BAD_DESCRIPTOR, 0, hidl_vec<hidl_handle>());
 		return Void();
+	}
+	property_get("ro.product.name", value, "0");
+	if (0 == strcmp("Tinker_Board_3N", value)) {
+		bufferDescriptor.consumer_usage |= RK_GRALLOC_USAGE_WITHIN_4G;
+		bufferDescriptor.producer_usage |= RK_GRALLOC_USAGE_WITHIN_4G;
 	}
 	common::allocate(&bufferDescriptor, count, hidl_cb);
 	return Void();

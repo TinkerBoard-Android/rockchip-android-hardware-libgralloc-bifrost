@@ -107,6 +107,7 @@ static const char* pick_dmabuf_heap(uint64_t usage)
 	}
 	else if ( usage & RK_GRALLOC_USAGE_WITHIN_4G )
 	{
+		MALI_GRALLOC_LOGV("allocate RK_GRALLOC_USAGE_WITHIN_4G");
 		if ( (usage & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_OFTEN )
 		{
 			return kDmabufSystemDma32HeapName; // cacheable dma32
