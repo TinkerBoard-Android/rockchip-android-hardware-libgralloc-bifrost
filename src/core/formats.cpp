@@ -1620,7 +1620,7 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
 				case RK3326:
 					I("to allocate AFBC buffer for fb_target_layer on rk3326.");
 					internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
-					modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC | MALI_GRALLOC_INTFMT_AFBC_YUV_TRANSFORM;
+					modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
 					break;
 
 				case RK356X:
