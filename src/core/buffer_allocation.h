@@ -166,3 +166,15 @@ static inline bool is_stride_alignment_specified(uint64_t usage)
 {
 	return ( get_usage_flag_for_stride_alignment(usage) != 0 );
 }
+
+static inline uint64_t get_usage_flag_for_height_alignment(uint64_t usage)
+{
+	return (usage & (RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_8
+				| RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_16
+				| RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64));
+}
+
+static inline bool is_height_alignment_specified(uint64_t usage)
+{
+	return (get_usage_flag_for_height_alignment(usage) != 0);
+}

@@ -1109,7 +1109,8 @@ int mali_gralloc_derive_format_and_size(buffer_descriptor_t *descriptor)
 				/* 对某些 格式的 rk_video_buffer 的 size 做必要调整. */
 				adjust_rk_video_buffer_size(bufDescriptor, format_info);
 			}
-			else if ( is_base_format_used_by_rk_video(base_format) && is_stride_alignment_specified(usage) )
+			else if ( is_base_format_used_by_rk_video(base_format) &&
+			        (is_stride_alignment_specified(usage) || is_height_alignment_specified(usage)))
 			{
 				adjust_rk_video_buffer_size(bufDescriptor, format_info);
 			}
