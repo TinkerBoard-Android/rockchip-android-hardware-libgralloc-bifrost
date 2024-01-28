@@ -159,19 +159,20 @@ android::base::expected<std::vector<unique_private_handle>, android::status_t> a
         {
             buffer_descriptor_t* bufDescriptor = buffer_descriptor;
 			const auto internal_format = hnd->alloc_format;
-			const auto alloc_format = internal_format.get_base();
+			const auto alloc_format_base = internal_format.get_base();
+			const auto alloc_format_modifiers = internal_format.get_modifiers();
 			const char* name = (bufDescriptor->name).data();
 
             ALOGD("got new private_handle_t instance for buffer '%s'. share_fd : %d, share_attr_fd : %d, "
                 "width : %d, height : %d, "
                 "req_format : 0x%x, producer_usage : 0x%" PRIx64 ", consumer_usage : 0x%" PRIx64 ", "
                 ", stride : %d, "
-                "alloc_format : %d, size : %d, layer_count : %u",
+                "alloc_format_base: %d, alloc_format_modifiers: 0x%08x, size : %d, layer_count : %u",
                 name == nullptr ? "unset" : name,
               hnd->share_fd, hnd->share_attr_fd, hnd->width, hnd->height,
               hnd->req_format, hnd->producer_usage, hnd->consumer_usage,
               hnd->stride,
-              alloc_format, hnd->size, hnd->layer_count);
+              alloc_format_base, alloc_format_modifiers, hnd->size, hnd->layer_count);
             ALOGD("plane_info[0]: offset : %u, byte_stride : %u, alloc_width : %u, alloc_height : %u",
                     (hnd->plane_info)[0].offset,
                     (hnd->plane_info)[0].byte_stride,
