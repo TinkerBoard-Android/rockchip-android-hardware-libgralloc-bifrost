@@ -1351,6 +1351,10 @@ rk_board_platform_t get_rk_board_platform()
 		{
 			s_platform = RK3588;
 		}
+		else if (0 == strcmp("rk3576", value) )
+		{
+			s_platform = RK3576;
+		}
 		else
 		{
 			LOG_ALWAYS_FATAL("unexpected 'value' : %s", value);
@@ -1638,6 +1642,24 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
 					}
 					break;
 
+				case RK3576:
+					if ( 0 == (usage & MALI_GRALLOC_USAGE_NO_AFBC) )
+					{
+						D("3576: to allocate AFBC buffer for fb_target_layer.");
+						internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
+						modifier = MALI_GRALLOC_INTFMT_AFBC_WIDEBLK
+								| MALI_GRALLOC_INTFMT_AFBC_SPARSE
+								| MALI_GRALLOC_INTFMT_AFBC_SPLITBLK
+								| MALI_GRALLOC_INTFMT_AFBC_BASIC;
+					}
+					else
+					{
+						D("to allocate non AFBC buffer for fb_target_layer on rk3576.");
+						internal_format = MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888;
+					}
+					break;
+
+
 				default:
 					LOG_ALWAYS_FATAL("unexpected 'platform' : %d", platform);
 					break;
@@ -1708,6 +1730,46 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
                                         }
                                 }
                         }
+			/* 否则, 若当前 platform 是 3576, 则... */
+			else if ( RK3576 == get_rk_board_platform() )
+			{
+				// 仅在特定 usage 下, 才使用 AFBC 格式.
+
+				/* 若 CPU "不会" 读写 buffer,
+                                 * 且 VPU "不会" 读 buffer (to encode),
+                                 * 且 camera "不会" 读写 buffer,
+                                 * 则... */
+                                if ( 0 == (usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK) )
+                                                && 0 == (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER)
+                                                && 0 == (usage & GRALLOC_USAGE_HW_CAMERA_WRITE)
+                                                && 0 == (usage & GRALLOC_USAGE_HW_CAMERA_READ) )
+                                {
+					// 对特定的 base 格式, 将使用特定 modifiers 的 AFBC 格式.
+
+					if ( MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I == internal_format
+						|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I == internal_format
+						|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT == internal_format
+						|| MALI_GRALLOC_FORMAT_INTERNAL_Y210 == internal_format )
+                                        {
+                                                D("3576: use_afbc_layer: force to use basic AFBC");
+                                                modifier = MALI_GRALLOC_INTFMT_AFBC_BASIC;
+                                        }
+					/* 否则, 若对 'internal_format' 3576 vop 支持对应的 AFBC 格式, 则... */
+					else if ( (MALI_GRALLOC_FORMAT_INTERNAL_RGBA_8888 == internal_format
+							|| MALI_GRALLOC_FORMAT_INTERNAL_RGB_888 == internal_format
+							|| MALI_GRALLOC_FORMAT_INTERNAL_RGBA_1010102 == internal_format)
+						&& should_sf_client_layer_use_afbc_format_by_size(internal_format,
+												  buffer_size) )
+					{
+						D("3576: use_afbc_layer: "
+							"force to use AFBC with modifier of 32x8 | SPARSE | SPLIT");
+						modifier = MALI_GRALLOC_INTFMT_AFBC_WIDEBLK
+							| MALI_GRALLOC_INTFMT_AFBC_SPARSE
+							| MALI_GRALLOC_INTFMT_AFBC_SPLITBLK
+							| MALI_GRALLOC_INTFMT_AFBC_BASIC;
+					}
+                                }
+			}
                 }
 	}
 

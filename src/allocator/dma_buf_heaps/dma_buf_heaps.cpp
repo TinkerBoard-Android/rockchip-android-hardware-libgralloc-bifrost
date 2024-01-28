@@ -98,6 +98,11 @@ static bool is_platform_rk356x()
 	return (RK356X == get_rk_board_platform() );
 }
 
+static bool is_platform_rk3576()
+{
+	return (RK3576 == get_rk_board_platform() );
+}
+
 static bool is_platform_rk3588()
 {
 	return (RK3588 == get_rk_board_platform() );

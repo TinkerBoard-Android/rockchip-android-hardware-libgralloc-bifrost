@@ -46,6 +46,7 @@ typedef enum rk_board_platform_t
     RK3326,
     RK356X,
     RK3588,
+    RK3576,
     RK_BOARD_PLATFORM_UNKNOWN,
 } rk_board_platform_t;
 
