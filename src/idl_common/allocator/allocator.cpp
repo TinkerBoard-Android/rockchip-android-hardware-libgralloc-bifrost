@@ -155,7 +155,7 @@ android::base::expected<std::vector<unique_private_handle>, android::status_t> a
 			                                     chroma_siting);
 		}
 
-#ifdef ENABLE_DEBUG_LOG
+#if 1
         {
             buffer_descriptor_t* bufDescriptor = buffer_descriptor;
 			const auto internal_format = hnd->alloc_format;
