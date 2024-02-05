@@ -380,7 +380,10 @@ void init_afbc(uint8_t *buf, const internal_format_t alloc_format,
 	 */
 	const uint32_t layout = is_subsampled_yuv(alloc_format) && !is_multi_plane ? 1 : 0;
 
-	MALI_GRALLOC_LOGV("Writing AFBC header layout %d for format %" PRIx32, layout, base_format);
+	MALI_GRALLOC_LOGI("Writing AFBC header layout %d for format %" PRIx32 ", n_headers: %u",
+			  layout,
+			  base_format,
+			  n_headers);
 
 	for (uint32_t i = 0; i < n_headers; i++)
 	{
