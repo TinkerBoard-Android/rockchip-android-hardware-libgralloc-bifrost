@@ -64,6 +64,9 @@ void set_chroma_siting(const imported_handle *hnd, const ExtendableType &chroma_
 void get_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, int64_t* offset);
 void set_offset_of_dynamic_hdr_metadata(const imported_handle *hnd, const int64_t offset);
 
+void get_fps(const imported_handle *hnd, uint32_t* fps);
+void set_fps(const imported_handle *hnd, const uint32_t fps);
+
 void get_blend_mode(const imported_handle *hnd, std::optional<BlendMode> *blend_mode);
 void set_blend_mode(const imported_handle *hnd, const BlendMode &blend_mode);
 

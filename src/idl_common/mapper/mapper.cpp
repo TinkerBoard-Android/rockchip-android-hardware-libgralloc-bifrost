@@ -512,6 +512,12 @@ static const hidl_vec<IMapper::MetadataTypeDescription> descriptions = {
 		true,
 		true,
 	},
+	{
+		RkMetadataType_FPS,
+		"FPS with which rk_video would queue the buffers",
+		true,
+		true,
+	},
 };
 
 static bool is_mutable(const IMapper::MetadataType &type)

@@ -356,6 +356,22 @@ static android::status_t decodeRkOffsetOfVideoMetadata(const hidl_vec<uint8_t>& 
 	return android::NO_ERROR;
 }
 
+static android::status_t encodeFps(const uint32_t fps, hidl_vec<uint8_t>* output)
+{
+	output->resize(1 * sizeof(fps));
+
+	memcpy(output->data(), &fps, sizeof(fps));
+
+	return android::OK;
+}
+
+static android::status_t decodeFps(const hidl_vec<uint8_t>& input, uint32_t* fps)
+{
+	memcpy(fps, input.data(), sizeof(*fps));
+
+	return android::NO_ERROR;
+}
+
 static bool isArmMetadataType(const MetadataType &metadataType)
 {
 	return metadataType.name == GRALLOC_ARM_METADATA_TYPE_NAME;
@@ -676,6 +692,16 @@ void get_metadata(const private_handle_t *handle, const IMapper::MetadataType &m
 
 			break;
 		}
+		case FPS:
+		{
+			auto import = handle_cast<imported_handle>(handle);
+			uint32_t fps = 0;
+
+			get_fps(import, &fps);
+			err = encodeFps(fps, &vec);
+
+			break;
+		}
 		default:
 			err = android::BAD_VALUE;
 		}
@@ -865,6 +891,18 @@ Error set_metadata(const imported_handle *handle, const IMapper::MetadataType &m
 				{
 					set_offset_of_dynamic_hdr_metadata(handle, offset);
 				}
+			}
+
+			break;
+		}
+		case FPS:
+		{
+			uint32_t fps = 0;
+
+			err = decodeFps(metadata, &fps);
+			if ( !err )
+			{
+				set_fps(handle, fps);
 			}
 
 			break;

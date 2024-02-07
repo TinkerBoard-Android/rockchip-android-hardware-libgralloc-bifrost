@@ -52,6 +52,12 @@ const static IMapper::MetadataType ArmMetadataType_PLANE_FDS{
 #define GRALLOC_RK_METADATA_TYPE_NAME "rk.graphics.RkMetadataType"
 const static IMapper::MetadataType RkMetadataType_OFFSET_OF_DYNAMIC_HDR_METADATA{ GRALLOC_RK_METADATA_TYPE_NAME,
 										  OFFSET_OF_DYNAMIC_HDR_METADATA };
+#define FPS (2)
+const static IMapper::MetadataType RkMetadataType_FPS
+{
+	GRALLOC_RK_METADATA_TYPE_NAME,
+	FPS,
+};
 
 /**
  * Retrieves a Buffer's metadata value.
