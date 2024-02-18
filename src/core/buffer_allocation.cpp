@@ -42,6 +42,9 @@
 #define AFBC_PIXELS_PER_BLOCK 256
 #define AFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY 16
 
+#define RFBC_PIXELS_PER_BLOCK 256	// 64 x 4
+#define RFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY 16
+
 /*
  * Get a global unique ID
  */
@@ -62,6 +65,15 @@ void afbc_buffer_align(const bool is_tiled, int *size)
 	{
 		buffer_byte_alignment = 4 * AFBC_BODY_BUFFER_BYTE_ALIGNMENT;
 	}
+
+	*size = GRALLOC_ALIGN(*size, buffer_byte_alignment);
+}
+
+void rfbc_buffer_align(int *size)
+{
+	const uint16_t RFBC_BODY_BUFFER_BYTE_ALIGNMENT = 1024; // 先假定和 AFBC 一样.
+
+	int buffer_byte_alignment = RFBC_BODY_BUFFER_BYTE_ALIGNMENT;
 
 	*size = GRALLOC_ALIGN(*size, buffer_byte_alignment);
 }
@@ -131,6 +143,16 @@ static rect_t get_afbc_sb_size(alloc_type_t alloc_type, const uint8_t plane)
 	{
 		return get_afbc_sb_size(alloc_type.primary_type);
 	}
+}
+
+static rect_t get_rfbc_sb_size()
+{
+	const uint16_t RFBC_BLOCK_WIDTH = 64;
+	const uint16_t RFBC_BLOCK_HEIGHT = 4;
+
+	rect_t sb = { RFBC_BLOCK_WIDTH, RFBC_BLOCK_HEIGHT };
+
+	return sb;
 }
 
 static void adjust_rk_video_buffer_size(buffer_descriptor_t* const bufDescriptor, const format_info_t* format)
@@ -338,6 +360,11 @@ std::optional<alloc_type_t> get_alloc_type(const internal_format_t format, const
 	{
 		alloc_type.primary_type = AllocBaseType::BLOCK_LINEAR;
 	}
+	else if (format.is_rfbc())
+	{
+		alloc_type.primary_type = AllocBaseType::RFBC;
+	}
+
 	return alloc_type;
 }
 
@@ -654,6 +681,15 @@ static void calc_allocation_size(const int width,
 			assert((plane_info[plane].alloc_width * format.bpp_afbc[plane]) % 8 == 0);
 			plane_info[plane].byte_stride = (plane_info[plane].alloc_width * format.bpp_afbc[plane]) / 8;
 		}
+		else if (alloc_type.is_rfbc())
+		{
+			assert((plane_info[plane].alloc_width * format.bpp_afbc[plane]) % 8 == 0);
+			/* 计算当前 plane 的 byte_stride.
+			 *
+			 * 预期 RFBC 格式的 "bpp_rfbc" 等于对应 AFBC 格式的 bpp_afbc.
+			 */
+			plane_info[plane].byte_stride = (plane_info[plane].alloc_width * format.bpp_afbc[plane]) / 8;
+		}
 		else if (alloc_type.is_block_linear())
 		{
 			assert((plane_info[plane].alloc_width * format.bpp[plane]) % 8 == 0);
@@ -692,7 +728,7 @@ static void calc_allocation_size(const int width,
 #if 0
 				hw_align = format.is_yuv ? 128 : 64;
 #else
-				if ( is_base_format_used_by_rk_video(format.id) 
+				if ( is_base_format_used_by_rk_video(format.id)
 					&& ( is_stride_specified
 						|| usage_flag_for_stride_alignment != 0 ) )
 				{
@@ -839,8 +875,17 @@ static void calc_allocation_size(const int width,
 			MALI_GRALLOC_LOGV("Pixel stride: %d", *pixel_stride);
 		}
 
-		const uint32_t sb_num =
+		uint32_t sb_num = 0;
+		if ( !alloc_type.is_rfbc() )
+		{
+		sb_num =
 		    (plane_info[plane].alloc_width * plane_info[plane].alloc_height) / AFBC_PIXELS_PER_BLOCK;
+		}
+		else
+		{
+			sb_num = (plane_info[plane].alloc_width * plane_info[plane].alloc_height)
+					/ RFBC_PIXELS_PER_BLOCK;
+		}
 
 		/*
 		 * Calculate body size (per plane).
@@ -865,6 +910,16 @@ static void calc_allocation_size(const int width,
 				afbc_buffer_align(alloc_type.is_tiled, &back_buffer_size);
 				body_size += back_buffer_size;
 			}
+		}
+		else if (alloc_type.is_rfbc())
+		{
+			const rect_t sb = get_rfbc_sb_size();
+			/* 计算当前 plane 每个 block 的 body_buffer 的字节大小.
+			 *
+			 * 预期 RFBC 格式的 "bpp_rfbc" 等于对应 AFBC 格式的 bpp_afbc.
+			 */
+			const int sb_bytes = GRALLOC_ALIGN((format.bpp_afbc[plane] * sb.width * sb.height) / 8, 128);
+			body_size = sb_num * sb_bytes;
 		}
 		else if (alloc_type.is_afrc())
 		{
@@ -908,7 +963,17 @@ static void calc_allocation_size(const int width,
 			header_size = sb_num * AFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY;
 			afbc_buffer_align(alloc_type.is_tiled, &header_size);
 		}
-		MALI_GRALLOC_LOGV("AFBC Header size: %d", header_size);
+		else if ( alloc_type.is_rfbc() )
+		{
+			/* As this is RFBC, calculate header size for this plane.
+			 * Always align the header, which will make the body buffer aligned.
+			 */
+
+			header_size = sb_num * RFBC_HEADER_BUFFER_BYTES_PER_BLOCKENTRY;
+
+			rfbc_buffer_align(&header_size);
+		}
+		MALI_GRALLOC_LOGV("Header size: %d", header_size);
 
 		/*
 		 * Set offset for separate chroma planes.

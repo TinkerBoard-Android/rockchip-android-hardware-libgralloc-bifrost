@@ -159,6 +159,24 @@ public:
 		return get_modifier(MALI_GRALLOC_INTFMT_AFBC_BASIC);
 	}
 
+	bool is_rfbc() const
+	{
+		mali_gralloc_internal_format base_format = get_base();
+
+		if ( MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC == base_format
+			|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC == base_format
+			|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC == base_format
+			|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC == base_format
+			)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
 	void set_afbc_32x8(bool value = true)
 	{
 		set_modifier(MALI_GRALLOC_INTFMT_AFBC_WIDEBLK, value);

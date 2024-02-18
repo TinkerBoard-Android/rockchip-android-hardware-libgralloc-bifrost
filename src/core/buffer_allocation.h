@@ -47,6 +47,9 @@ enum class AllocBaseType
 
 	/* Block Linear */
 	BLOCK_LINEAR,
+
+	/* RK Framebuffer Compression */
+	RFBC,
 };
 
 /*
@@ -140,6 +143,11 @@ struct AllocType
 	bool is_block_linear() const
 	{
 		return primary_type == AllocBaseType::BLOCK_LINEAR;
+	}
+
+	bool is_rfbc() const
+	{
+		return primary_type == AllocBaseType::RFBC;
 	}
 };
 

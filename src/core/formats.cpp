@@ -264,6 +264,12 @@ void mali_gralloc_adjust_dimensions(const internal_format_t alloc_format, const 
 			*width = GRALLOC_ALIGN(*width, 16);
 			*height = GRALLOC_ALIGN(*height, 16);
 		}
+
+		if ( alloc_format.is_rfbc() )
+		{
+			*width = GRALLOC_ALIGN(*width, 64);
+			*height = GRALLOC_ALIGN(*height, 4);
+		}
 	}
 
 	MALI_GRALLOC_LOG(INFO) << __FUNCTION__ << ": alloc_format=" << alloc_format << " usage=" << std::showbase
@@ -375,9 +381,13 @@ bool is_base_format_used_by_rk_video(const uint32_t base_format)
 	if ( MALI_GRALLOC_FORMAT_INTERNAL_NV12 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV16 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I == base_format
+		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I == base_format
+		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT == base_format
+		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_Y210 == base_format
+		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV15 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV24 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV30 == base_format )
@@ -1551,20 +1561,41 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
 		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I as internal_format for HAL_PIXEL_FORMAT_YUV420_8BIT_I.");
 		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I;
 	}
+	else if ( HAL_PIXEL_FORMAT_YUV420_8BIT_RFBC  == req_format )
+	{
+		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC as internal_format for HAL_PIXEL_FORMAT_YUV420_8BIT_RFBC.");
+		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC;
+	}
+
 	else if ( HAL_PIXEL_FORMAT_YUV420_10BIT_I == req_format )
 	{
 		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I as internal_format for HAL_PIXEL_FORMAT_YUV420_10BIT_I.");
 		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I;
+	}
+	else if ( HAL_PIXEL_FORMAT_YUV420_10BIT_RFBC == req_format )
+	{
+		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC as internal_format for HAL_PIXEL_FORMAT_YUV420_10BIT_RFBC.");
+		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC;
 	}
 	else if ( HAL_PIXEL_FORMAT_YCbCr_422_I == req_format )
 	{
 		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT as internal_format for HAL_PIXEL_FORMAT_YCbCr_422_I.");
 		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT;
 	}
+	else if ( HAL_PIXEL_FORMAT_YUV422_8BIT_RFBC == req_format )
+	{
+		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC as internal_format for HAL_PIXEL_FORMAT_YUV422_8BIT_RFBC.");
+		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC;
+	}
 	else if ( HAL_PIXEL_FORMAT_Y210 == req_format )
 	{
 		D("to use MALI_GRALLOC_FORMAT_INTERNAL_Y210 as internal_format for HAL_PIXEL_FORMAT_Y210.");
 		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_Y210;
+	}
+	else if ( HAL_PIXEL_FORMAT_YUV422_10BIT_RFBC == req_format )
+	{
+		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC as internal_format for HAL_PIXEL_FORMAT_YUV422_10BIT_RFBC.");
+		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC;
 	}
 	else if ( req_format == HAL_PIXEL_FORMAT_YCRCB_420_SP)
 	{

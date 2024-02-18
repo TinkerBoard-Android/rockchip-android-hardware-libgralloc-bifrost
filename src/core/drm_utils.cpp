@@ -20,6 +20,7 @@
 #include "gralloc/formats.h"
 #include "core/format_info.h"
 #include "core/internal_format.h"
+#include "helper_functions.h"
 
 enum class format_colormodel
 {
@@ -55,6 +56,7 @@ const static std::unordered_map<mali_gralloc_internal_format, table_entry> table
 	{ MALI_GRALLOC_FORMAT_INTERNAL_NV21, {DRM_FORMAT_NV21, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_Y0L2, {DRM_FORMAT_Y0L2, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_Y210, {DRM_FORMAT_Y210, format_colormodel::yuv} },
+	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC, {DRM_FORMAT_Y210, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_P010, {DRM_FORMAT_P010, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_P210, {DRM_FORMAT_P210, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_Y410, {DRM_FORMAT_Y410, format_colormodel::yuv} },
@@ -62,8 +64,11 @@ const static std::unordered_map<mali_gralloc_internal_format, table_entry> table
 	{ MALI_GRALLOC_FORMAT_INTERNAL_Q410, {DRM_FORMAT_Q410, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_Q401, {DRM_FORMAT_Q401, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT, {DRM_FORMAT_YUYV, format_colormodel::yuv} },
+	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC, {DRM_FORMAT_YUYV, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_I, {DRM_FORMAT_YUV420_8BIT, format_colormodel::yuv} },
+	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC, {DRM_FORMAT_YUV420_8BIT, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I, {DRM_FORMAT_YUV420_10BIT, format_colormodel::yuv} },
+	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC, {DRM_FORMAT_YUV420_10BIT, format_colormodel::yuv} },
 
 	{ MALI_GRALLOC_FORMAT_INTERNAL_R8, {DRM_FORMAT_R8, format_colormodel::rgb} },
 
@@ -244,12 +249,23 @@ static uint64_t get_afbc_modifier_tags(const private_handle_t *hnd)
 	return DRM_FORMAT_MOD_ARM_AFBC(modifier);
 }
 
+static uint64_t get_rfbc_modifier_tags(const private_handle_t *hnd)
+{
+	GRALLOC_UNUSED(hnd);
+
+	return DRM_FORMAT_MOD_ROCKCHIP_RFBC(ROCKCHIP_RFBC_BLOCK_SIZE_64x4); // 目前 RFBC 唯一的 modifier.
+}
+
 uint64_t drm_modifier_from_handle(const private_handle_t *hnd)
 {
 	auto alloc_format = hnd->alloc_format;
 	if (alloc_format.is_afbc())
 	{
 		return get_afbc_modifier_tags(hnd);
+	}
+	else if (alloc_format.is_rfbc())
+	{
+		return get_rfbc_modifier_tags(hnd);
 	}
 	else if (alloc_format.is_afrc())
 	{
