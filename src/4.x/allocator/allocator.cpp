@@ -92,8 +92,7 @@ Return<void> GrallocAllocator::allocate(const BufferDescriptor &descriptor, uint
 
 extern "C" IAllocator *HIDL_FETCH_IAllocator(const char * /* name */)
 {
-	MALI_GRALLOC_LOGV("Arm Module IAllocator %d, pid = %d ppid = %d", GRALLOC_ALLOCATOR_HIDL_VERSION_MAJOR, getpid(),
-	                  getppid());
+	MALI_GRALLOC_LOGV("Arm Module IAllocator %d, pid = %d", GRALLOC_ALLOCATOR_HIDL_VERSION_MAJOR, getpid());
 
 	return new arm::allocator::GrallocAllocator();
 }

@@ -170,7 +170,7 @@ Return<void> GrallocMapper::getReservedRegion(void *buffer, getReservedRegion_cb
 
 extern "C" IMapper *HIDL_FETCH_IMapper(const char * /* name */)
 {
-	MALI_GRALLOC_LOGV("Arm Module IMapper %d, pid = %d ppid = %d ", GRALLOC_MAPPER_VERSION_MAJOR, getpid(), getppid());
+	MALI_GRALLOC_LOGV("Arm Module IMapper %d, pid = %d", GRALLOC_MAPPER_VERSION_MAJOR, getpid());
 
 	return new arm::mapper::GrallocMapper();
 }
