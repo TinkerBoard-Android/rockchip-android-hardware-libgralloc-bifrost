@@ -132,7 +132,7 @@ const std::vector<format_info_t> formats = {
 	},
 	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC,
-		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 8, .bpp_afbc = { 12, 0, 0 }, .bpp = { 0, 0, 0 },
+		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 8, .bpp_afbc = { 12, 0, 0 }, .bpp = { 12, 0, 0 },
 		.hsub = 2, .vsub = 2, .align_w = 2, .align_h = 2, ALIGN_W_CPU_DEFAULT,
 		.tile_size = 1, .has_alpha = false, .is_rgb = false, .is_yuv = true,
 		.afbc = true, .linear = true, .yuv_transform = false, .flex = false, .block_linear = false, .afrc = false,
@@ -253,7 +253,7 @@ const std::vector<format_info_t> formats = {
 	},
 	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC,
-		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 10, .bpp_afbc = { 15, 0, 0 }, .bpp = { 0, 0, 0 },
+		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 10, .bpp_afbc = { 15, 0, 0 }, .bpp = { 15, 0, 0 },
 		.hsub = 2, .vsub = 2, .align_w = 2, .align_h = 2, ALIGN_W_CPU_DEFAULT,
 		.tile_size = 1, .has_alpha = false, .is_rgb = false, .is_yuv = true,
 		.afbc = false, .linear = true, .yuv_transform = false, .flex = false, .block_linear = false, .afrc = false,
@@ -294,7 +294,7 @@ const std::vector<format_info_t> formats = {
 	},
 	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC,
-		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 10, .bpp_afbc = { 20, 0, 0 }, .bpp = { 32, 0, 0 },
+		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 10, .bpp_afbc = { 20, 0, 0 }, .bpp = { 20, 0, 0 },
 		.hsub = 2, .vsub = 1, .align_w = 2, .align_h = 1, ALIGN_W_CPU_DEFAULT,
 		.tile_size = 1, .has_alpha = false, .is_rgb = false, .is_yuv = true,
 		.afbc = false, .linear = true, .yuv_transform = false, .flex = true, .block_linear = false, .afrc = false,
