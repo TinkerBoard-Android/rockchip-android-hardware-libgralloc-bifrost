@@ -220,8 +220,8 @@ const std::vector<format_info_t> formats = {
 	/* 444 (10-bit) 2 plane */
 	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_NV30,
-		.npln = 3, .ncmp = { 1, 2, 0 }, .bps = 10, .bpp_afbc = { 0, 0, 0 }, .bpp = { 10, 20, 0 },
-		.hsub = 1, .vsub = 1, .align_w = 2, .align_h = 2, ALIGN_W_CPU_DEFAULT,
+		.npln = 2, .ncmp = { 1, 2, 0 }, .bps = 10, .bpp_afbc = { 0, 0, 0 }, .bpp = { 10, 20, 0 },
+		.hsub = 1, .vsub = 1, .align_w = 1, .align_h = 1, ALIGN_W_CPU_DEFAULT,
 		.tile_size = 1, .has_alpha = false, .is_rgb = false, .is_yuv = true,
 		.afbc = false, .linear = true, .yuv_transform = false, .flex = false, .block_linear = false, .afrc = false,
 	},
