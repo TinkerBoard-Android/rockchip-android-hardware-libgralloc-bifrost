@@ -819,31 +819,52 @@ static void calc_allocation_size(const int width,
 			{
 				uint32_t byte_stride = plane_info[plane].byte_stride;
 
-				switch ( usage_flag_for_stride_alignment )
+				if ( 0 == plane )
 				{
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_16:
-					byte_stride = GRALLOC_ALIGN(byte_stride, 16);
-					break;
+					switch ( usage_flag_for_stride_alignment )
+					{
+					case RK_GRALLOC_USAGE_STRIDE_ALIGN_16:
+						byte_stride = GRALLOC_ALIGN(byte_stride, 16);
+						break;
 
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_64:
-					byte_stride = GRALLOC_ALIGN(byte_stride, 64);
-					break;
+					case RK_GRALLOC_USAGE_STRIDE_ALIGN_64:
+						byte_stride = GRALLOC_ALIGN(byte_stride, 64);
+						break;
 
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_128:
-					byte_stride = GRALLOC_ALIGN(byte_stride, 128);
-					break;
+					case RK_GRALLOC_USAGE_STRIDE_ALIGN_128:
+						byte_stride = GRALLOC_ALIGN(byte_stride, 128);
+						break;
 
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES:
-					byte_stride = ( (byte_stride + 255) & (~255) ) | (256);
-					break;
+					case RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES:
+						byte_stride = ( (byte_stride + 255) & (~255) ) | (256);
+						break;
 
-				default:
-					MY_E("unexpected 'usage_flag_for_stride_alignment': 0x%" PRIx64,
-					  usage_flag_for_stride_alignment);
-					break;
+					default:
+						MY_E("unexpected 'usage_flag_for_stride_alignment': 0x%" PRIx64,
+						  usage_flag_for_stride_alignment);
+						break;
+					}
+
+					plane_info[plane].byte_stride = byte_stride;
 				}
-
-				plane_info[plane].byte_stride = byte_stride;
+				else if ( 1 == plane )
+				{
+					if ( 2 == format.npln )
+					{
+						plane_info[plane].byte_stride = 
+							plane_info[0].byte_stride / format.hsub * 2;
+							// "* 2": 因为 UV 分量在一个 plane 中.
+					}
+					else if ( 3 == format.npln )
+					{
+						plane_info[plane].byte_stride = 
+							plane_info[0].byte_stride / format.hsub;
+					}
+				}
+				else if ( 2 == plane )
+				{
+					plane_info[plane].byte_stride = plane_info[0].byte_stride / format.hsub;
+				}
 			}
 
 			if ( MALI_GRALLOC_FORMAT_INTERNAL_NV30 == format.id )
