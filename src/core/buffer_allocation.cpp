@@ -765,44 +765,6 @@ static void calc_allocation_size(const int width,
 				    GRALLOC_ALIGN(plane_info[plane].byte_stride * format.tile_size, stride_align) / format.tile_size;
 			}
 
-			if ( usage_flag_for_stride_alignment != 0
-				&& format.id == MALI_GRALLOC_FORMAT_INTERNAL_NV12 ) // 仅处理 NV12
-			{
-				uint32_t pixel_stride = 0;
-
-				switch ( usage_flag_for_stride_alignment )
-				{
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_16:
-					pixel_stride = GRALLOC_ALIGN(width, 16);
-					break;
-
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_64:
-					pixel_stride = GRALLOC_ALIGN(width, 64);
-					break;
-
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_128:
-					pixel_stride = GRALLOC_ALIGN(width, 128);
-					break;
-
-				case RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES:
-					pixel_stride = ( (width + 255) & (~255) ) | (256);
-					break;
-
-				default:
-					MY_E("unexpected 'usage_flag_for_stride_alignment': 0x%" PRIx64,
-					  usage_flag_for_stride_alignment);
-					break;
-				}
-
-				if ( 0 == plane )
-				{
-					plane_info[plane].byte_stride = pixel_stride * format.bpp[plane] / 8;
-				}
-				else // for sub-sample (sub-sampled) planes.
-				{
-					plane_info[plane].byte_stride = pixel_stride * format.bpp[plane] / 8 / format.hsub;
-				}
-			}
 
 			/*
 			 * Update YV12 stride with both CPU & HW usage due to constraint of chroma stride.
@@ -813,9 +775,8 @@ static void calc_allocation_size(const int width,
 				update_yv12_stride(plane, plane_info[0].byte_stride, stride_align, &plane_info[plane].byte_stride);
 			}
 
-			/* 按需对 nv12 以外的 rk_video 使用的格式调整 byte_stride. */
-			if ( usage_flag_for_stride_alignment != 0
-				&& MALI_GRALLOC_FORMAT_INTERNAL_NV12 != format.id )
+			/* 根据 rk_usages_for_align 调整 byte_stride. */
+			if ( usage_flag_for_stride_alignment != 0 )
 			{
 				uint32_t byte_stride = plane_info[plane].byte_stride;
 
@@ -839,6 +800,9 @@ static void calc_allocation_size(const int width,
 						byte_stride = ( (byte_stride + 255) & (~255) ) | (256);
 						break;
 
+					case RK_GRALLOC_USAGE_STRIDE_ALIGN_128_ODD_TIMES_PLUS_64:
+						byte_stride = RT_ALIGN_ODD(byte_stride, 128) + 64;
+						break;
 					default:
 						MY_E("unexpected 'usage_flag_for_stride_alignment': 0x%" PRIx64,
 						  usage_flag_for_stride_alignment);

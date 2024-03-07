@@ -167,7 +167,8 @@ static inline uint64_t get_usage_flag_for_stride_alignment(uint64_t usage)
 	return (usage & (RK_GRALLOC_USAGE_STRIDE_ALIGN_16
 				| RK_GRALLOC_USAGE_STRIDE_ALIGN_64
 				| RK_GRALLOC_USAGE_STRIDE_ALIGN_128
-				| RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES) );
+				| RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES
+				| RK_GRALLOC_USAGE_STRIDE_ALIGN_128_ODD_TIMES_PLUS_64));
 }
 
 static inline bool is_stride_alignment_specified(uint64_t usage)

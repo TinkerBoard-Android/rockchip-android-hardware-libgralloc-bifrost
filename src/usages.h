@@ -102,6 +102,8 @@ typedef enum
 	 */
 	RK_GRALLOC_USAGE_STRIDE_ALIGN_64 = GRALLOC_USAGE_PRIVATE_7,
 
+	RK_GRALLOC_USAGE_STRIDE_ALIGN_128_ODD_TIMES_PLUS_64 = GRALLOC_USAGE_PRIVATE_15,
+
 	/* 表征 "当前 调用 alloc() 的 client 通过 width 指定了其预期的 buffer stride",
 	 * 即要求 gralloc 遵循 rk_implicit_alloc_semantic (即 满足 implicit_requirement_for_rk_gralloc_allocate).
 	 */

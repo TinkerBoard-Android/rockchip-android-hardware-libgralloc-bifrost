@@ -26,6 +26,9 @@
 
 #define GRALLOC_ALIGN(value, base) ((((value) + (base) -1) / (base)) * (base))
 
+#define RT_ALIGN(x, a)         (((x) + (a) - 1) & ~((a) - 1))
+#define RT_ALIGN_ODD(x, a)     (RT_ALIGN(x, a) | a)
+
 #define GRALLOC_MAX(a, b) (((a)>(b))?(a):(b))
 
 #define GRALLOC_UNUSED(x) ((void)x)
