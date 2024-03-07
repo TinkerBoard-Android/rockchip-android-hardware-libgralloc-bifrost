@@ -78,8 +78,8 @@
 /* 64 对齐. */
 #define RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64 (GRALLOC_USAGE_PRIVATE_4 | GRALLOC_USAGE_PRIVATE_5)
 
-/* 表征当前 buffer 使用 Dolby Vision. */
-#define RK_GRALLOC_USAGE_DOLBY_VISION (GRALLOC_USAGE_PRIVATE_6)
+/* the buffer would be used for dynamic HDR (such as Vivid, Dolby Vision, ...) */
+#define GRALLOC_USAGE_DYNAMIC_HDR (GRALLOC_USAGE_PRIVATE_6)
 
 typedef enum
 {

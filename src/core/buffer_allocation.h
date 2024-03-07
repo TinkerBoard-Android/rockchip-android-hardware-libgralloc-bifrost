@@ -189,5 +189,5 @@ static inline bool is_height_alignment_specified(uint64_t usage)
 
 static inline bool has_dynamic_hdr(uint64_t usage)
 {
-	return ( (usage & RK_GRALLOC_USAGE_DOLBY_VISION) != 0 );
+	return ( (usage & GRALLOC_USAGE_DYNAMIC_HDR) != 0 );
 }
