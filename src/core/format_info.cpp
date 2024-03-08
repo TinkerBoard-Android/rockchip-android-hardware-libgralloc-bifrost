@@ -203,6 +203,13 @@ const std::vector<format_info_t> formats = {
 	},
 	/* 444 (8-bit) */
 	{
+		.id = MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC,
+		.npln = 1, .ncmp = { 3, 0, 0 }, .bps = 8, .bpp_afbc = { 24, 0, 0 }, .bpp = { 24, 0, 0 },
+		.hsub = 1, .vsub = 1, .align_w = 1, .align_h = 1, ALIGN_W_CPU_DEFAULT,
+		.tile_size = 1, .has_alpha = false, .is_rgb = false, .is_yuv = true,
+		.afbc = false, .linear = true, .yuv_transform = false, .flex = true, .block_linear = false, .afrc = false,
+	},
+	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_NV24,
 		.npln = 2, .ncmp = { 1, 2, 0 }, .bps = 8, .bpp_afbc = { 0, 0, 0 }, .bpp = { 8, 16, 0 },
 		.hsub = 1, .vsub = 1, .align_w = 1, .align_h = 1, ALIGN_W_CPU_DEFAULT,
@@ -680,6 +687,19 @@ const format_ip_support_t formats_ip_support[] = {
 		.cam_wr = F_NONE,
 	},
 	/* 444 (8-bit) */
+	{
+		.id = MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC,
+		.cpu_rd = F_LIN,
+		.cpu_wr = F_LIN,
+		.gpu_rd = F_LIN | F_AFBC | F_BL_YUV | F_AFRC,
+		.gpu_wr = F_LIN | F_AFRC | F_BL_YUV,
+		.dpu_rd = F_NONE | F_AFRC,
+		.dpu_wr = F_NONE,
+		.dpu_aeu_wr = F_NONE,
+		.vpu_rd = F_NONE,
+		.vpu_wr = F_BL_YUV,
+		.cam_wr = F_NONE,
+	},
 	{
 		.id = MALI_GRALLOC_FORMAT_INTERNAL_NV24,
 		.cpu_rd = F_LIN,

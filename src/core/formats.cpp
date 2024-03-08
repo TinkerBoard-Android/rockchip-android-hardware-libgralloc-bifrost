@@ -388,6 +388,7 @@ bool is_base_format_used_by_rk_video(const uint32_t base_format)
 		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_8BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_Y210 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV422_10BIT_RFBC == base_format
+		|| MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV15 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV24 == base_format
 		|| MALI_GRALLOC_FORMAT_INTERNAL_NV30 == base_format )
@@ -1601,6 +1602,11 @@ static internal_format_t rk_gralloc_select_format(const mali_gralloc_android_for
 	{
 		D("to use NV21 for  %" PRIu64, req_format);
 		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_NV21;
+	}
+	else if ( HAL_PIXEL_FORMAT_YUV444_8BIT_RFBC == req_format )
+	{
+		D("to use MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC as internal_format for HAL_PIXEL_FORMAT_YUV444_8BIT_RFBC.");
+		internal_format = MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC;
 	}
 
 	/*-------------------------------------------------------*/

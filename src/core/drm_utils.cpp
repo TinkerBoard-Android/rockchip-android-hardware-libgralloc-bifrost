@@ -69,6 +69,7 @@ const static std::unordered_map<mali_gralloc_internal_format, table_entry> table
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_8BIT_RFBC, {DRM_FORMAT_YUV420_8BIT, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I, {DRM_FORMAT_YUV420_10BIT, format_colormodel::yuv} },
 	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_RFBC, {DRM_FORMAT_YUV420_10BIT, format_colormodel::yuv} },
+	{ MALI_GRALLOC_FORMAT_INTERNAL_YUV444_8BIT_RFBC, {DRM_FORMAT_VUY888, format_colormodel::yuv} },
 
 	{ MALI_GRALLOC_FORMAT_INTERNAL_R8, {DRM_FORMAT_R8, format_colormodel::rgb} },
 
