@@ -647,6 +647,11 @@ static void calc_allocation_size(const int width,
 	bool has_hw_usage = usage & ~(GRALLOC_USAGE_PRIVATE_MASK | GRALLOC_USAGE_SW_READ_MASK |
 	                              GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_FRONTBUFFER);
 
+	if ( (RK_GRALLOC_USAGE_SPECIFY_STRIDE & usage) == RK_GRALLOC_USAGE_SPECIFY_STRIDE  )
+	{
+		MALI_GRALLOC_LOGW("Do not use RK_GRALLOC_USAGE_SPECIFY_STRIDE, as it will soon no longer be supported.");
+	}
+
 	*size = 0;
 	for (uint8_t plane = 0; plane < format.npln; plane++)
 	{
