@@ -19,9 +19,20 @@
 #include <android/binder_process.h>
 #include <android-base/logging.h>
 
+#include <cutils/properties.h>
+
+#include "log.h"
 #include "allocator.h"
 
 using aidl::android::hardware::graphics::allocator::impl::arm::allocator;
+
+static void set_properties_for_align_behavior_of_alloc_buffer()
+{
+	property_set("vendor.gralloc.is_rk_rule_not_supported", "1");
+	property_set("vendor.gralloc.could_specify_byte_stride_as_rk_rule", "0");
+	property_set("vendor.gralloc.could_specify_byte_stride_align", "1");
+	property_set("vendor.gralloc.could_specify_alloc_height_align", "1");
+}
 
 int main()
 {
@@ -30,6 +41,9 @@ int main()
 	const std::string name = std::string() + allocator::descriptor + "/default";
 	auto status = AServiceManager_addService(instance->asBinder().get(), name.c_str());
 	CHECK_EQ(status, STATUS_OK);
+
+	ALOGI("%s: %d: to set properties_for_align_behavior_of_alloc_buffer", __FUNCTION__, __LINE__);
+	set_properties_for_align_behavior_of_alloc_buffer();
 
 	ABinderProcess_joinThreadPool();
 	return EXIT_FAILURE;
