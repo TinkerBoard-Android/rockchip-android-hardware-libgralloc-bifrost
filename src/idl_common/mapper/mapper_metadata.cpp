@@ -190,6 +190,13 @@ static std::vector<std::vector<PlaneLayoutComponent>> plane_layout_components_fr
 				{ { CB, 6, 10 }, { CR, 22, 10 } }
 			}
 		},
+		{
+			.drm_fourcc = DRM_FORMAT_NV15,
+			.components = {
+				{ { Y, 0, 10 } },
+				{ { CB, 0, 10 }, { CR, 10, 10 } }
+			}
+		},
 		/* Planar 8 bit YVU 4:2:0 */
 		{
 			.drm_fourcc = DRM_FORMAT_YVU420,
