@@ -15,19 +15,6 @@
  * limitations under the License.
  */
 
-cc_defaults {
-    name: "arm_gralloc_version_defaults",
-    shared_libs: [
-        "android.hardware.graphics.common@1.2",
-        "android.hardware.graphics.common-V4-ndk",
-    ],
-    cflags: [
-        "-DGRALLOC_MAPPER_VERSION_MAJOR=4",
-        "-DGRALLOC_ALLOCATOR_HIDL_VERSION_MAJOR=0",
-        "-DGRALLOC_ALLOCATOR_AIDL_VERSION=1",
-    ],
-}
-
 cc_library_shared {
     name: "android.hardware.graphics.allocator-V1-bifrost",
     compile_multilib: "both",

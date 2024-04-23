@@ -15,6 +15,43 @@
  * limitations under the License.
  */
 
+soong_config_module_type {
+    name: "gralloc_rockchip_soong_gen_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "gralloc_rockchip",
+    bool_variables: [
+        "aidl",
+    ],
+    properties: ["cflags", "shared_libs"],
+}
+
+gralloc_rockchip_soong_gen_defaults {
+    name: "arm_gralloc_version_defaults",
+    soong_config_variables: {
+        aidl: {
+            cflags: [
+                "-DGRALLOC_MAPPER_VERSION_MAJOR=4",
+                "-DGRALLOC_ALLOCATOR_HIDL_VERSION_MAJOR=0",
+                "-DGRALLOC_ALLOCATOR_AIDL_VERSION=1",
+            ],
+            shared_libs: [
+                "android.hardware.graphics.common@1.2",
+                "android.hardware.graphics.common-V4-ndk",
+            ],
+            conditions_default: {
+                cflags: [
+                    "-DGRALLOC_MAPPER_VERSION_MAJOR=4",
+                    "-DGRALLOC_ALLOCATOR_HIDL_VERSION_MAJOR=4",
+                    "-DGRALLOC_ALLOCATOR_AIDL_VERSION=0",
+                ],
+                shared_libs: [
+                    "android.hardware.graphics.common@1.2",
+                ],
+            },
+        },
+    },
+}
+
 cc_defaults {
 	name: "arm_gralloc_common_defaults",
 	defaults: ["arm_gralloc_build_defaults"],
